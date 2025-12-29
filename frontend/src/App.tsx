@@ -1,35 +1,67 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+// src/App.tsx
+import { useState } from 'react';
+import { QRScanner } from './components/QRScanner';
+import { RegistroForm } from './components/RegistroForm';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [punto, setPunto] = useState<number | null>(null);
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleScan = (punto: number) => {
+    setPunto(punto);
+    setMensaje(null);
+    setError(null);
+  };
+
+  const handleBack = () => {
+    setPunto(null);
+    setMensaje(null);
+    setError(null);
+  };
+
+  const handleSuccess = (msg: string) => {
+    setMensaje(msg);
+    setTimeout(handleBack, 3000);
+  };
+
+  const handleError = (err: string) => {
+    setError(err);
+    setTimeout(() => setError(null), 5000);
+  };
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <div className="min-h-screen bg-gray-100">
+      <header className="bg-blue-800 text-white p-6 text-center">
+        <h1 className="text-2xl font-bold">Control de Rondas - Vigilancia</h1>
+      </header>
+
+      <main className="container mx-auto px-4">
+        {mensaje && (
+          <div className="mt-8 p-6 bg-green-100 border border-green-400 text-green-800 rounded-lg text-center text-xl font-bold">
+            {mensaje}
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-8 p-6 bg-red-100 border border-red-400 text-red-800 rounded-lg text-center">
+            {error}
+          </div>
+        )}
+
+        {!punto ? (
+          <QRScanner onScan={handleScan} onError={handleError} />
+        ) : (
+          <RegistroForm
+            punto={punto}
+            onSuccess={handleSuccess}
+            onError={handleError}
+            onBack={handleBack}
+          />
+        )}
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
