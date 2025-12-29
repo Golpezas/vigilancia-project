@@ -4,8 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"  // Cambio clave: de postgresql a sqlite
-  url      = env("DATABASE_URL")
+  provider = "sqlite"  // Solo provider, sin url
 }
 
 model Vigilador {
