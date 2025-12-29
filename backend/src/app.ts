@@ -4,8 +4,8 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import vigiladorRoutes from './routes/vigiladorRoutes'; // ← Sin .js
-import { AppError } from './utils/errorHandler';
+import vigiladorRoutes from './routes/vigiladorRoutes'; // ← .js
+import { AppError } from './utils/errorHandler'; // ← .js
 
 const app = express();
 const PORT = process.env.PORT || 3001;

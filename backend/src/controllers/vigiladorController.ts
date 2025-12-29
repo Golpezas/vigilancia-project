@@ -1,9 +1,11 @@
 // src/controllers/vigiladorController.ts
 import { Request, Response } from 'express';
-import { VigiladorService } from '../services/vigiladorService';
+import { VigiladorService } from '../services/vigiladorService'; // ← .js
 import { z } from 'zod';
-import type { SubmitRegistroData } from '../types'; // type-only import
-import { ValidationError } from '../utils/errorHandler';
+import type { SubmitRegistroData } from '../types/index'; // ← .js
+import { ValidationError } from '../utils/errorHandler'; // ← .js
+
+// ... resto igual
 
 const SubmitSchema = z.object({
   nombre: z.string().min(1).trim(),

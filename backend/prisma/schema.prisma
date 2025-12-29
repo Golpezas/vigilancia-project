@@ -1,7 +1,12 @@
-// prisma/schema.prisma - Modelo de datos normalizado (3NF)
+// prisma/schema.prisma - Modelo de datos normalizado (3NF) para Prisma 5.22.0 + SQLite
+
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
-  provider = "sqlite"  // Solo provider – URL gestionada por prisma.config.ts (Prisma 7)
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 model Vigilador {
@@ -18,7 +23,7 @@ model Vigilador {
 model Punto {
   id        Int       @id
   nombre    String
-  geo       Json?
+  geo       String?   // ← String simple (SQLite almacena como TEXT)
   registros Registro[]
 
   @@map("punto")
@@ -29,7 +34,7 @@ model Registro {
   vigiladorId     String
   puntoId         Int
   timestamp       DateTime  @default(now())
-  geolocalizacion Json?
+  geolocalizacion String?   // ← String simple (SQLite almacena como TEXT)
   novedades       String?
 
   vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])

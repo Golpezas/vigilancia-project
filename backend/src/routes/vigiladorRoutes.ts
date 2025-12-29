@@ -1,6 +1,7 @@
 // src/routes/vigiladorRoutes.ts
+
 import { Router } from 'express';
-import { VigiladorController } from '../controllers/vigiladorController'; // ← Sin .js
+import { VigiladorController } from '../controllers/vigiladorController'; // ← .js
 
 const router = Router();
 

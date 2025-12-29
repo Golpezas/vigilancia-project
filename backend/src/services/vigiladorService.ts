@@ -1,10 +1,10 @@
 // src/services/vigiladorService.ts
 // Lógica de negocio principal - Validación secuencial y normalización
 
-import { VigiladorRepository } from '../repositories/vigiladorRepository';
-import { SubmitRegistroData, VigiladorEstado } from '../types';
-import { normalizeGeo, normalizeNovedades } from '../utils/normalizer';
-import { ForbiddenError, ValidationError } from '../utils/errorHandler';
+import { VigiladorRepository } from '../repositories/vigiladorRepository'; // ← .js
+import type { SubmitRegistroData, VigiladorEstado } from '../types/index'; // ← .js
+import { normalizeGeo, normalizeNovedades } from '../utils/normalizer'; // ← .js
+import { ForbiddenError, ValidationError } from '../utils/errorHandler'; // ← .js
 
 export class VigiladorService {
   /**
@@ -43,7 +43,7 @@ export class VigiladorService {
       vigilador.id,
       punto,
       new Date(timestamp),
-      geoNormalizado,
+      geoNormalizado, // ya es GeoLocation | null
       novedadesNormalizadas
     );
 
