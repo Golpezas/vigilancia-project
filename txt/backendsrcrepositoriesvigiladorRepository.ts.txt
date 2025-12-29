@@ -1,0 +1,74 @@
+// src/repositories/vigiladorRepository.ts
+// Capa de acceso a datos - Patrón Repository para desacoplar Prisma del negocio
+
+import { PrismaClient } from '../../generated/client';
+import { VigiladorEstado } from '../types';
+
+const prisma = new PrismaClient();
+
+export class VigiladorRepository {
+  /**
+   * Busca o crea un vigilador por legajo
+   */
+  static async findOrCreate(legajo: number, nombre: string): Promise<VigiladorEstado> {
+    let vigilador = await prisma.vigilador.findUnique({
+      where: { legajo },
+    });
+
+    if (!vigilador) {
+      vigilador = await prisma.vigilador.create({
+        data: {
+          nombre: nombre.trim(),
+          legajo,
+          ultimoPunto: 0,
+          rondaActiva: false,
+        },
+      });
+    }
+
+    return vigilador as VigiladorEstado;
+  }
+
+  /**
+   * Obtiene el estado actual del vigilador
+   */
+  static async getEstado(legajo: number): Promise<VigiladorEstado | null> {
+    return (await prisma.vigilador.findUnique({
+      where: { legajo },
+    })) as VigiladorEstado | null;
+  }
+
+  /**
+   * Actualiza el último punto escaneado
+   */
+  static async updateUltimoPunto(legajo: number, punto: number, activa: boolean = true) {
+    await prisma.vigilador.update({
+      where: { legajo },
+      data: {
+        ultimoPunto: punto,
+        rondaActiva: activa,
+      },
+    });
+  }
+
+  /**
+   * Crea el registro de escaneo
+   */
+  static async crearRegistro(
+    vigiladorId: string,
+    puntoId: number,
+    timestamp: Date,
+    geo: any,
+    novedades: string
+  ) {
+    await prisma.registro.create({
+      data: {
+        vigiladorId,
+        puntoId,
+        timestamp,
+        geolocalizacion: geo,
+        novedades: novedades || null,
+      },
+    });
+  }
+}

@@ -1,38 +1,40 @@
-// schema.prisma - Modelo de datos normalizado (3NF)
-generator client {
-  provider = "prisma-client"  // Nuevo generator recomendado para Prisma 7 (mejor ESM support)
-  output   = "../src/generated/client"  // Ruta relativa: genera en src/generated/client
-}
+// prisma/schema.prisma - Modelo de datos normalizado (3NF)
 
 datasource db {
-  provider = "sqlite"  // Solo provider, sin url
+  provider = "sqlite"  // Solo provider – URL gestionada por prisma.config.ts (Prisma 7)
 }
 
 model Vigilador {
-  id           String    @id @default(uuid()) // UUID para unicidad global
-  nombre       String    // Normalizado: Sin redundancias
-  legajo       Int       @unique // Clave única para identificación
-  ultimoPunto  Int       @default(0) // Estado secuencial
-  rondaActiva  Boolean   @default(false) // Flag para lógica de negocio
-  registros    Registro[] // Relación 1:N
+  id           String    @id @default(uuid())
+  nombre       String
+  legajo       Int       @unique
+  ultimoPunto  Int       @default(0)
+  rondaActiva  Boolean   @default(false)
+  registros    Registro[]
+
+  @@map("vigilador")
 }
 
 model Punto {
-  id       Int      @id // Secuencial simple (1-10)
-  nombre   String   // e.g., "Punto 1"
-  geo      Json?    // {lat: number, long: number} para validación futura
-  registros Registro[] // Relación 1:N
+  id        Int       @id
+  nombre    String
+  geo       Json?
+  registros Registro[]
+
+  @@map("punto")
 }
 
 model Registro {
   id              String    @id @default(uuid())
-  vigiladorId     String    // FK
-  puntoId         Int       // FK
-  timestamp       DateTime  @default(now()) // Automático para trazabilidad
-  geolocalizacion Json?     // Normalizado como JSON
+  vigiladorId     String
+  puntoId         Int
+  timestamp       DateTime  @default(now())
+  geolocalizacion Json?
   novedades       String?
+
   vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
   punto           Punto     @relation(fields: [puntoId], references: [id])
 
-  @@index([vigiladorId, timestamp]) // Índice para queries rápidas por vigilador y tiempo
+  @@index([vigiladorId, timestamp])
+  @@map("registro")
 }
