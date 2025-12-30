@@ -2,11 +2,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'https://tu-backend.up.railway.app/api',  // Cambiar a tu dominio en producción
+  baseURL: 'backend-production-d4731.up.railway.app', // ← URL Railway pública
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 export default api;
