@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFormik } from 'formik';
 import { z } from 'zod';
+import axios from 'axios'; // ← Necesario para axios.isAxiosError
 import api from '../services/api';
 import type { ApiResponse } from '../types';
 
@@ -20,31 +21,42 @@ interface RegistroFormProps {
   onBack: () => void;
 }
 
-export const RegistroForm: React.FC<RegistroFormProps> = ({ punto, onSuccess, onError, onBack }) => {
-  const [geo, setGeo] = useState<{ lat: number | null; long: number | null }>({ lat: null, long: null });
+export const RegistroForm: React.FC<RegistroFormProps> = ({
+  punto,
+  onSuccess,
+  onError,
+  onBack,
+}) => {
+  const [geo, setGeo] = useState<{ lat: number | null; long: number | null }>({
+    lat: null,
+    long: null,
+  });
   const [loadingGeo, setLoadingGeo] = useState(true);
 
   useEffect(() => {
-    const getLocation = () => {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setGeo({
-              lat: position.coords.latitude,
-              long: position.coords.longitude,
-            });
-          },
-          (err) => {
-            console.warn('Geolocalización denegada o error:', err);
-            setGeo({ lat: null, long: null });
-          },
-          { timeout: 10000 }
-        );
-      }
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setGeo({
+            lat: position.coords.latitude,
+            long: position.coords.longitude,
+          });
+          setLoadingGeo(false);
+        },
+        (err) => {
+          console.warn('Error de geolocalización:', err.message);
+          setGeo({ lat: null, long: null });
+          setLoadingGeo(false);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000,
+        }
+      );
+    } else {
       setLoadingGeo(false);
-    };
-
-    getLocation();
+    }
   }, []);
 
   const formik = useFormik<FormValues>({
@@ -61,26 +73,37 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({ punto, onSuccess, on
       return {};
     },
     onSubmit: async (values, { setSubmitting }) => {
+      // ← Aquí está el handleSubmit mejorado que te sugerí
       try {
         const response = await api.post<ApiResponse>('/submit', {
           nombre: values.nombre.trim(),
           legajo: values.legajo,
           punto,
-          novedades: values.novedades?.trim(),
+          novedades: values.novedades?.trim() || null, // opcional: enviar null si vacío
           timestamp: new Date().toISOString(),
-          geo,
+          geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : null,
         });
 
         if (response.data.success) {
           onSuccess(response.data.mensaje || 'Punto registrado correctamente');
         } else {
-          onError(response.data.error || 'Respuesta inesperada del servidor');
+          throw new Error(response.data.error || 'Respuesta inesperada del servidor');
         }
       } catch (err) {
-        const msg = err instanceof Error 
-          ? err.message 
-          : 'Error de conexión con el servidor';
-        onError(msg);
+        let errorMsg = 'Error inesperado';
+
+        if (axios.isAxiosError(err)) {
+          // Errores de red o del servidor (4xx, 5xx)
+          errorMsg =
+            err.response?.data?.error ||
+            err.response?.data?.message ||
+            err.message ||
+            'Error de red. Verificá tu conexión';
+        } else if (err instanceof Error) {
+          errorMsg = err.message;
+        }
+
+        onError(errorMsg);
       } finally {
         setSubmitting(false);
       }
@@ -89,7 +112,8 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({ punto, onSuccess, on
 
   return (
     <div className="w-full max-w-md mx-auto mt-8 p-6 bg-white rounded-lg shadow-lg">
-      <h2 className="text-2xl font-bold text-center mb-6">Punto {punto}</h2>
+      <h2 className="text-2xl font-bold text-center mb-6">Registro Punto {punto}</h2>
+
       <form onSubmit={formik.handleSubmit}>
         <div className="mb-4">
           <label className="block text-sm font-medium mb-1">Nombre completo</label>
@@ -99,11 +123,12 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({ punto, onSuccess, on
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
             value={formik.values.nombre}
-            className="w-full px-4 py-2 border rounded-lg"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Juan Pérez"
+            autoFocus
           />
           {formik.touched.nombre && formik.errors.nombre && (
-            <p className="text-red-500 text-sm mt-1">{formik.errors.nombre as string}</p>
+            <p className="text-red-500 text-sm mt-1">{formik.errors.nombre}</p>
           )}
         </div>
 
@@ -115,11 +140,11 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({ punto, onSuccess, on
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
             value={formik.values.legajo}
-            className="w-full px-4 py-2 border rounded-lg"
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="12345"
           />
           {formik.touched.legajo && formik.errors.legajo && (
-            <p className="text-red-500 text-sm mt-1">{formik.errors.legajo as string}</p>
+            <p className="text-red-500 text-sm mt-1">{formik.errors.legajo}</p>
           )}
         </div>
 
@@ -130,24 +155,35 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({ punto, onSuccess, on
             onChange={formik.handleChange}
             onBlur={formik.handleBlur}
             value={formik.values.novedades ?? ''}
-            rows={3}
-            className="w-full px-4 py-2 border rounded-lg"
-            placeholder="Todo en orden..."
+            rows={4}
+            className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Todo en orden, sin novedades..."
           />
         </div>
 
-        <div className="mb-4 text-sm text-gray-600">
-          Geolocalización: {loadingGeo ? 'Obteniendo...' : geo.lat ? 'Capturada' : 'No disponible'}
+        <div className="mb-6 text-sm">
+          <span className="font-medium">Geolocalización: </span>
+          {loadingGeo ? (
+            <span className="text-gray-500">Obteniendo ubicación...</span>
+          ) : geo.lat && geo.long ? (
+            <span className="text-green-600">Capturada ✓</span>
+          ) : (
+            <span className="text-orange-600">No disponible (se enviará sin coordenadas)</span>
+          )}
         </div>
 
         <div className="flex gap-4">
-          <button type="button" onClick={onBack} className="flex-1 py-3 bg-gray-500 text-white rounded-lg font-medium">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex-1 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition"
+          >
             Volver a escanear
           </button>
           <button
             type="submit"
             disabled={formik.isSubmitting || loadingGeo}
-            className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-medium disabled:opacity-50"
+            className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {formik.isSubmitting ? 'Enviando...' : 'Enviar registro'}
           </button>
