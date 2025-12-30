@@ -1,0 +1,14 @@
+{
+  "serviceName": "Servicio Principal",
+  "numberOfPoints": 4,
+  "baseUrl": "https://vigilancia-project.vercel.app",
+  "outputDir": "./qrs",
+  "qrOptions": {
+    "width": 512,
+    "margin": 2,
+    "color": {
+      "dark": "#1e40af",
+      "light": "#ffffff"
+    }
+  }
+}
