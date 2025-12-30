@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"  // ← PostgreSQL (Railway)
   url      = env("DATABASE_URL")
 }
 
