@@ -1,8 +1,8 @@
-// src/services/api.ts
+// frontend/src/services/api.ts
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'backend-production-d4731.up.railway.app', // ← URL Railway pública
+  baseURL: 'https://backend-production-d4731.up.railway.app/api',  // ← Protocolo + /api
   timeout: 10000,
 });
 
