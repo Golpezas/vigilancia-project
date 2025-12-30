@@ -54,7 +54,8 @@ app.use('*', (req, res) => {
 // Iniciar servidor
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor backend corriendo en puerto ${PORT}`);
-  console.log(`📊 Prisma Studio: npx prisma studio`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`🔗 Acceso local: http://localhost:${PORT}`);
+  }
 });
-
 export default app;
