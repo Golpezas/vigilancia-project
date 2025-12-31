@@ -2,6 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "main": "dist/app.js",
+  "type": "commonjs",
   "scripts": {
     "dev": "ts-node src/app.ts",
     "build": "tsc",
@@ -9,7 +10,12 @@
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:migrate:deploy": "prisma migrate deploy"
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "generate:qrs": "ts-node scripts/generate-qrs.ts",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "express": "^4.18.2",

@@ -44,7 +44,7 @@ console.log(`📱 URL base: ${baseUrl}\n`);
 
 (async () => {
   for (const punto of points) {
-    const url = `${baseUrl}?punto=${punto}`;
+    const url = `${baseUrl}/punto/${punto}`;
     const fileName = `Punto_${punto.toString().padStart(2, '0')}_${serviceName.replace(/ /g, '_')}.png`;
     const filePath = path.join(outputDir, fileName);
 
