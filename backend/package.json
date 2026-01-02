@@ -11,7 +11,7 @@
     "prisma:studio": "prisma studio",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "generate:qrs": "ts-node scripts/generate-qrs.ts",
+    "generate:qrs": "ts-node ./scripts/generate-qrs.ts",
     "db:seed": "prisma db seed"
   },
   "prisma": {
