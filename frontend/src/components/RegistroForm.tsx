@@ -115,17 +115,18 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           responseStatus = error.response?.status;
         }
 
-        // ← LÓGICA 100% TYPE-SAFE SIN 'any' NI VIOLACIONES ESLINT/TS (mejores prácticas 2026)
+        // ← MANEJO TYPE-SAFE COMPLETO SIN 'any' NI VIOLACIONES ESLINT/TS
         let displayMsg = 'Error desconocido';
 
-        // Narrowing progresivo y exhaustivo para evitar cualquier uso de 'any'
-        if (
-          responseStatus === 403 &&
+        // Narrowing exhaustivo y seguro para errores del backend (403, 400, etc.)
+        const isApiErrorResponse =
+          responseStatus !== undefined &&
           typeof responseData === 'object' &&
           responseData !== null &&
           'error' in responseData &&
-          typeof (responseData as Record<string, unknown>).error === 'string' // ← Reemplazo seguro de 'any'
-        ) {
+          typeof (responseData as Record<string, unknown>).error === 'string';
+
+        if (isApiErrorResponse) {
           // Dentro de este bloque, TS infiere que responseData tiene { error: string }
           displayMsg = (responseData as { error: string }).error;
         } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
@@ -134,6 +135,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           displayMsg = errMsg;
         }
 
+        // Log estructurado para depuración (visible en Vercel / browser console)
         console.error('❌ Error en submit:', {
           message: errMsg,
           status: responseStatus,
@@ -141,6 +143,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           response: responseData,
         });
 
+        // ← Mensaje final que ve el vigilador: claro, útil y sin códigos técnicos
         onError(displayMsg);
       } finally {
         setSubmitting(false);
