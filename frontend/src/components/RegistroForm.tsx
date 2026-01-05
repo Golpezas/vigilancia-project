@@ -100,40 +100,46 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           throw new Error(response.data.error || 'Error desconocido');
         }
       } catch (error: unknown) {
-        // ← Manejo type-safe de errores Axios sin 'any' ni errores TS
         let errMsg = 'Error desconocido';
         let code: string | undefined = undefined;
         let responseData: unknown = undefined;
-        let requestInfo: unknown = undefined;
+        let responseStatus: number | undefined = undefined;
 
-        // Primero: extraer mensaje base si es Error estándar
         if (error instanceof Error) {
           errMsg = error.message;
         }
 
-        // Segundo: usar type guard oficial de Axios
-        // TS ahora infiere correctamente que error es AxiosError dentro del if
         if (isAxiosError(error)) {
-          code = error.code;                    // ✅ TS lo reconoce (string | undefined)
-          responseData = error.response?.data;  // ✅ TS sabe que response existe y tiene data
-          requestInfo = error.request;          // ✅ TS sabe que request existe
-          // Opcional: más campos seguros como error.config, error.status, etc.
+          code = error.code;
+          responseData = error.response?.data;
+          responseStatus = error.response?.status;
         }
 
-        // Log estructurado detallado (normalización de data para depuración)
+        // ← LÓGICA 100% TYPE-SAFE SIN 'any' NI VIOLACIONES ESLINT/TS (mejores prácticas 2026)
+        let displayMsg = 'Error desconocido';
+
+        // Narrowing progresivo y exhaustivo para evitar cualquier uso de 'any'
+        if (
+          responseStatus === 403 &&
+          typeof responseData === 'object' &&
+          responseData !== null &&
+          'error' in responseData &&
+          typeof (responseData as Record<string, unknown>).error === 'string' // ← Reemplazo seguro de 'any'
+        ) {
+          // Dentro de este bloque, TS infiere que responseData tiene { error: string }
+          displayMsg = (responseData as { error: string }).error;
+        } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
+          displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
+        } else {
+          displayMsg = errMsg;
+        }
+
         console.error('❌ Error en submit:', {
           message: errMsg,
+          status: responseStatus,
           code,
           response: responseData,
-          request: requestInfo,
         });
-
-        // Mensaje al usuario más preciso detectando timeout
-        const displayMsg = 
-          errMsg.toLowerCase().includes('secuencia inválida') ? errMsg : // Muestra mensaje backend
-          errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' 
-            ? 'Timeout: Verifica conexión o backend' 
-            : errMsg;
 
         onError(displayMsg);
       } finally {
