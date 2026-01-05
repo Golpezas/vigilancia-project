@@ -41,21 +41,26 @@ app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
     method: req.method,
     body: req.body,
     query: req.query,
-    errorMessage: (err instanceof Error ? err.message : 'Error desconocido'),
-    stack: (err instanceof Error ? err.stack : undefined)
+    errorMessage: err instanceof Error ? err.message : 'Error desconocido',
+    stack: err instanceof Error ? err.stack : undefined,
   };
-  // ← Objeto estructurado primero
-  logger.error(context, '🚨 Error global no manejado');
+
+  // Usa child logger para context adicional (best practice Pino: no sobreescribir global)
+  const errorLogger = logger.child({ reqId: req.headers['x-request-id'] || 'unknown' }); // Opcional reqId para traceability
+  errorLogger.error(context, '🚨 Error global no manejado');
+
+  let status = 500;
+  let message = 'Error interno del servidor';
 
   if (err instanceof AppError) {
-    return res.status(err.statusCode || 500).json({
-      error: err.message
-    });
+    status = err.statusCode;
+    message = err.message;
+  } else if (err instanceof Error) {
+    // Fallback para errores genéricos (normalización)
+    message = err.message;
   }
 
-  res.status(500).json({
-    error: 'Error interno del servidor'
-  });
+  res.status(status).json({ error: message });
 });
 
 // 404 handler

@@ -129,9 +129,10 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         });
 
         // Mensaje al usuario más preciso detectando timeout
-        const displayMsg =
-          errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED'
-            ? 'Timeout: Verifica tu conexión al backend o intenta más tarde'
+        const displayMsg = 
+          errMsg.toLowerCase().includes('secuencia inválida') ? errMsg : // Muestra mensaje backend
+          errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' 
+            ? 'Timeout: Verifica conexión o backend' 
             : errMsg;
 
         onError(displayMsg);
