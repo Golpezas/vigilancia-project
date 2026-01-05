@@ -9,6 +9,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Vigilador se mantiene igual
 model Vigilador {
   id           String    @id @default(uuid())
   nombre       String
@@ -21,9 +22,8 @@ model Vigilador {
 }
 
 model Punto {
-  id        Int       @id
-  nombre    String
-  geo       String?   // ← String simple (SQLite almacena como TEXT)
+  id        Int       @id @default(autoincrement()) // Best practice: autoincrement
+  nombre    String    @unique
   registros Registro[]
 
   @@map("punto")
@@ -34,7 +34,7 @@ model Registro {
   vigiladorId     String
   puntoId         Int
   timestamp       DateTime  @default(now())
-  geolocalizacion String?   // ← String simple (SQLite almacena como TEXT)
+  geolocalizacion String?   // Geo REAL capturada en el momento del escaneo
   novedades       String?
 
   vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])

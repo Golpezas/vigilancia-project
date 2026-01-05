@@ -1,7 +1,7 @@
 {
-  "serviceName": "Servicio Principal",
-  "numberOfPoints": 4,
-  "baseUrl": "https://vigilancia-project.vercel.app",
+  "serviceName": "Control de Rondas - Vigilancia",
+  "numberOfPoints": 6,  
+  "baseUrl": "https://vigilancia-project.vercel.app",  
   "outputDir": "./qrs",
   "qrOptions": {
     "width": 512,

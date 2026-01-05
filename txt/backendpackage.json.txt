@@ -11,22 +11,25 @@
     "prisma:studio": "prisma studio",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "generate:qrs": "ts-node scripts/generate-qrs.ts"
+    "generate:qrs": "ts-node ./scripts/generate-qrs.ts",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.7.0",
-    "cors": "^2.8.5",
     "express": "^4.18.2",
+    "cors": "^2.8.5",
     "helmet": "^7.0.0",
-    "qrcode": "^1.5.4",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "@prisma/client": "^5.7.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.3" 
   },
   "devDependencies": {
-    "@types/cors": "^2.8.13",
     "@types/express": "^4.17.17",
-    "@types/node": "^20.19.27",
-    "prisma": "^5.7.0",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.3.3"
+    "@types/cors": "^2.8.13",
+    "@types/node": "^20.10.0",
+    "prisma": "^5.7.0"
   }
 }
