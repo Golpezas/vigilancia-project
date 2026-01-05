@@ -90,19 +90,16 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           throw new Error(response.data.error || 'Respuesta inesperada del servidor');
         }
       } catch (err) {
-        let errorMsg = 'Error inesperado';
-
+        let errorMsg = 'Error de red o servidor';
         if (axios.isAxiosError(err)) {
-          // Errores de red o del servidor (4xx, 5xx)
-          errorMsg =
-            err.response?.data?.error ||
-            err.response?.data?.message ||
-            err.message ||
-            'Error de red. Verificá tu conexión';
-        } else if (err instanceof Error) {
-          errorMsg = err.message;
+          if (err.code === 'ECONNABORTED') {
+            errorMsg = 'Tiempo de espera excedido. El servidor puede estar despertando (intenta de nuevo en 10s)';
+          } else if (err.response?.data?.error) {
+            errorMsg = err.response.data.error;
+          } else {
+            errorMsg = err.message;
+          }
         }
-
         onError(errorMsg);
       } finally {
         setSubmitting(false);
