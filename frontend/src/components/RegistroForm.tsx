@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useFormik } from 'formik';
 import { z } from 'zod';
-import axios from 'axios'; // ← Necesario para axios.isAxiosError
+import { isAxiosError } from 'axios'; // ← Necesario para axios.isAxiosError
 import api from '../services/api';
 import type { ApiResponse } from '../types';
 
@@ -73,34 +73,68 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
       return {};
     },
     onSubmit: async (values, { setSubmitting }) => {
-      // ← Aquí está el handleSubmit mejorado que te sugerí
       try {
+        console.log('📤 Iniciando submit:', {
+          nombre: values.nombre.trim(),
+          legajo: values.legajo,
+          punto,
+          novedades: values.novedades?.trim(),
+          timestamp: new Date().toISOString(),
+          geo,
+        });
+
         const response = await api.post<ApiResponse>('/submit', {
           nombre: values.nombre.trim(),
           legajo: values.legajo,
           punto,
-          novedades: values.novedades?.trim() || null, // opcional: enviar null si vacío
+          novedades: values.novedades?.trim(),
           timestamp: new Date().toISOString(),
-          geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : null,
+          geo,
         });
 
+        console.log('✅ Respuesta exitosa:', response.data);
+
         if (response.data.success) {
-          onSuccess(response.data.mensaje || 'Punto registrado correctamente');
+          onSuccess(response.data.mensaje || 'Registro enviado');
         } else {
-          throw new Error(response.data.error || 'Respuesta inesperada del servidor');
+          throw new Error(response.data.error || 'Error desconocido');
         }
-      } catch (err) {
-        let errorMsg = 'Error de red o servidor';
-        if (axios.isAxiosError(err)) {
-          if (err.code === 'ECONNABORTED') {
-            errorMsg = 'Tiempo de espera excedido. El servidor puede estar despertando (intenta de nuevo en 10s)';
-          } else if (err.response?.data?.error) {
-            errorMsg = err.response.data.error;
-          } else {
-            errorMsg = err.message;
-          }
+      } catch (error: unknown) {
+        // ← Manejo type-safe de errores Axios sin 'any' ni errores TS
+        let errMsg = 'Error desconocido';
+        let code: string | undefined = undefined;
+        let responseData: unknown = undefined;
+        let requestInfo: unknown = undefined;
+
+        // Primero: extraer mensaje base si es Error estándar
+        if (error instanceof Error) {
+          errMsg = error.message;
         }
-        onError(errorMsg);
+
+        // Segundo: usar type guard oficial de Axios
+        // TS ahora infiere correctamente que error es AxiosError dentro del if
+        if (isAxiosError(error)) {
+          code = error.code;                    // ✅ TS lo reconoce (string | undefined)
+          responseData = error.response?.data;  // ✅ TS sabe que response existe y tiene data
+          requestInfo = error.request;          // ✅ TS sabe que request existe
+          // Opcional: más campos seguros como error.config, error.status, etc.
+        }
+
+        // Log estructurado detallado (normalización de data para depuración)
+        console.error('❌ Error en submit:', {
+          message: errMsg,
+          code,
+          response: responseData,
+          request: requestInfo,
+        });
+
+        // Mensaje al usuario más preciso detectando timeout
+        const displayMsg =
+          errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED'
+            ? 'Timeout: Verifica tu conexión al backend o intenta más tarde'
+            : errMsg;
+
+        onError(displayMsg);
       } finally {
         setSubmitting(false);
       }

@@ -14,11 +14,17 @@ const api = axios.create({
 
 // Interceptor útil para dev
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('🔗 Respuesta API:', { url: response.config.url, status: response.status });
+    return response;
+  },
   (error) => {
-    if (import.meta.env.DEV) {
-      console.warn('API Error:', error.message, error.response?.data);
-    }
+    console.error('🚨 Error API:', {
+      url: error.config?.url,
+      message: error.message,
+      code: error.code,
+      response: error.response?.data,
+    });
     return Promise.reject(error);
   }
 );
