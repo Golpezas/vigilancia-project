@@ -11,6 +11,7 @@ export interface SubmitRegistroData {
   novedades?: string;
   timestamp: string;
   geo?: GeoLocation;
+  servicioId?: string; // Opcional por ahora, requerido en multi
 }
 
 export interface ApiResponse {

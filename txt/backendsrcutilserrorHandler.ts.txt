@@ -1,5 +1,5 @@
 // src/utils/errorHandler.ts
-// Manejo centralizado de errores - Mejor práctica para respuestas consistentes y depuración
+// Manejo centralizado de errores - Mejores prácticas 2026: herencia estricta, logging en creación, type-safety
 
 export class AppError extends Error {
   public readonly statusCode: number;
@@ -10,7 +10,10 @@ export class AppError extends Error {
     this.statusCode = statusCode;
     this.isOperational = isOperational;
 
-    // Mantener stack trace correcto en TypeScript
+    // Logging early en creación (normalización para depuración)
+    console.warn(`[AppError created] ${statusCode}: ${message}`); // Temporal para test; reemplaza con logger si Pino ready
+
+    // Stack trace correcto en TS (best practice)
     Error.captureStackTrace(this, this.constructor);
   }
 }

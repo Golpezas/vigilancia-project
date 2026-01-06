@@ -1,29 +1,37 @@
-// prisma/schema.prisma - Modelo de datos normalizado (3NF) para Prisma 5.22.0 + SQLite
+// prisma/schema.prisma - Versión corregida para migración segura
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"  // ← PostgreSQL (Railway)
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Vigilador se mantiene igual
 model Vigilador {
   id           String    @id @default(uuid())
   nombre       String
   legajo       Int       @unique
   ultimoPunto  Int       @default(0)
   rondaActiva  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  servicioId   String
+  servicio     Servicio  @relation(fields: [servicioId], references: [id])
+
   registros    Registro[]
 
   @@map("vigilador")
 }
 
 model Punto {
-  id        Int       @id @default(autoincrement()) // Best practice: autoincrement
+  id        Int       @id @default(autoincrement())
   nombre    String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
   registros Registro[]
 
   @@map("punto")
@@ -34,12 +42,38 @@ model Registro {
   vigiladorId     String
   puntoId         Int
   timestamp       DateTime  @default(now())
-  geolocalizacion String?   // Geo REAL capturada en el momento del escaneo
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  geolocalizacion String?
   novedades       String?
 
   vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
   punto           Punto     @relation(fields: [puntoId], references: [id])
 
   @@index([vigiladorId, timestamp])
+  @@index([vigiladorId, createdAt])
   @@map("registro")
+}
+
+model Servicio {
+  id          String    @id @default(uuid())
+  nombre      String    @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  vigiladores Vigilador[]   // ← Relación one-to-many (un servicio → muchos vigiladores)
+
+  @@map("servicio")
+}
+
+model ServicioPunto {
+  servicioId String
+  puntoId    Int
+
+  servicio   Servicio @relation(fields: [servicioId], references: [id])
+  punto      Punto    @relation(fields: [puntoId], references: [id])
+
+  @@id([servicioId, puntoId])
+  @@map("servicio_punto")
 }
