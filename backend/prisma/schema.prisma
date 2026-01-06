@@ -1,4 +1,5 @@
-// prisma/schema.prisma - Versión corregida para migración segura
+// prisma/schema.prisma - Fase 1: Servicio básico + relación con Vigilador (multi-servicio base)
+// Mejores prácticas: Relaciones bidireccionales completas, auditoría automática, índices para escalabilidad
 
 generator client {
   provider = "prisma-client-js"
@@ -9,28 +10,39 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Servicio {
+  id        String   @id @default(uuid())
+  nombre    String   @unique // Nombre único del servicio/cliente (ej: "Cliente Principal")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vigiladores Vigilador[] // Relación one-to-many: un servicio → muchos vigiladores
+
+  @@map("servicio")
+}
+
 model Vigilador {
-  id           String    @id @default(uuid())
-  nombre       String
-  legajo       Int       @unique
-  ultimoPunto  Int       @default(0)
-  rondaActiva  Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String   @id @default(uuid())
+  nombre      String
+  legajo      Int      @unique
+  ultimoPunto Int      @default(0)
+  rondaActiva Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  servicioId   String
-  servicio     Servicio  @relation(fields: [servicioId], references: [id])
+  servicioId String
+  servicio   Servicio @relation(fields: [servicioId], references: [id]) // Relación many-to-one: vigilador pertenece a un servicio
 
-  registros    Registro[]
+  registros Registro[]
 
   @@map("vigilador")
 }
 
 model Punto {
-  id        Int       @id @default(autoincrement())
-  nombre    String    @unique
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id        Int      @id @default(autoincrement())
+  nombre    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   registros Registro[]
 
@@ -38,42 +50,20 @@ model Punto {
 }
 
 model Registro {
-  id              String    @id @default(uuid())
-  vigiladorId     String
-  puntoId         Int
-  timestamp       DateTime  @default(now())
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id          String   @id @default(uuid())
+  vigiladorId String
+  puntoId     Int
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   geolocalizacion String?
   novedades       String?
 
-  vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
-  punto           Punto     @relation(fields: [puntoId], references: [id])
+  vigilador Vigilador @relation(fields: [vigiladorId], references: [id])
+  punto     Punto     @relation(fields: [puntoId], references: [id])
 
-  @@index([vigiladorId, timestamp])
-  @@index([vigiladorId, createdAt])
+  @@index([vigiladorId, timestamp]) // Índice para historial por vigilador + tiempo
+  @@index([vigiladorId, createdAt]) // Índice extra para queries auditadas
   @@map("registro")
-}
-
-model Servicio {
-  id          String    @id @default(uuid())
-  nombre      String    @unique
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  vigiladores Vigilador[]   // ← Relación one-to-many (un servicio → muchos vigiladores)
-
-  @@map("servicio")
-}
-
-model ServicioPunto {
-  servicioId String
-  puntoId    Int
-
-  servicio   Servicio @relation(fields: [servicioId], references: [id])
-  punto      Punto    @relation(fields: [puntoId], references: [id])
-
-  @@id([servicioId, puntoId])
-  @@map("servicio_punto")
 }
