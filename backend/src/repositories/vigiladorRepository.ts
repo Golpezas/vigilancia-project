@@ -1,11 +1,14 @@
 // src/repositories/vigiladorRepository.ts
 // Capa de acceso a datos - Patrón Repository para desacoplar Prisma del negocio
 // Mejores prácticas: type-safety total, normalización de data, documentación JSDoc
+// Singleton Prisma exportado (DRY - evita múltiples conexiones)
 
 import { PrismaClient } from '@prisma/client';
 import type { VigiladorEstado, GeoLocation } from '../types/index'; // type-only import
+import logger from '../utils/logger'; // ← Import centralizado del logger Pino
 
-const prisma = new PrismaClient({
+// Singleton Prisma (best practice: una sola instancia por app)
+export const prisma = new PrismaClient({
   log: ['query', 'info', 'warn', 'error'], // Opcional: logging para depuración en desarrollo
 });
 
@@ -15,13 +18,23 @@ const prisma = new PrismaClient({
  */
 export class VigiladorRepository {
   /**
-   * Busca un vigilador por legajo o lo crea si no existe
-   * Normaliza el nombre (trim)
+   * Busca un vigilador por legajo o lo crea asignando automáticamente el servicio "Default"
+   * Normaliza el nombre (trim) y asegura relación con servicio (multi-servicio base)
    * @param legajo - Legajo único del vigilador
    * @param nombre - Nombre completo
    * @returns VigiladorEstado con id y datos
    */
   static async findOrCreate(legajo: number, nombre: string): Promise<VigiladorEstado> {
+    // Obtener servicio Default
+    const servicioDefault = await prisma.servicio.findUnique({
+      where: { nombre: 'Default' },
+    });
+
+    if (!servicioDefault) {
+      logger.error('Servicio "Default" no encontrado en DB - Ejecuta npx prisma db seed');
+      throw new Error('Configuración inválida: falta servicio Default');
+    }
+
     let vigilador = await prisma.vigilador.findUnique({
       where: { legajo },
     });
@@ -33,8 +46,13 @@ export class VigiladorRepository {
           legajo,
           ultimoPunto: 0,
           rondaActiva: false,
+          servicioId: servicioDefault.id,  // ← Asignación automática
         },
       });
+      logger.info(
+        { legajo, nombre: vigilador.nombre, servicioId: servicioDefault.id },
+        '🆕 Nuevo vigilador creado con servicio Default'
+      );
     }
 
     return vigilador as VigiladorEstado;
@@ -71,7 +89,7 @@ export class VigiladorRepository {
 
   /**
    * Crea un registro de escaneo
-   * Normaliza geolocalización a string JSON (compatible con SQLite String @db.Text)
+   * Normaliza geolocalización a string JSON
    * @param vigiladorId - ID del vigilador
    * @param puntoId - ID del punto
    * @param timestamp - Fecha y hora del escaneo
@@ -90,7 +108,7 @@ export class VigiladorRepository {
         vigiladorId,
         puntoId,
         timestamp,
-        geolocalizacion: geo ? JSON.stringify(geo) : null, // ← Normalización a string
+        geolocalizacion: geo ? JSON.stringify(geo) : null,
         novedades: novedades || null,
       },
     });
