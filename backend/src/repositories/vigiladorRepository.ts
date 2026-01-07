@@ -87,33 +87,39 @@ export class VigiladorRepository {
     });
   }
 
-  /**
+    /**
    * Crea un registro de escaneo
    * Normaliza geolocalización a string JSON
    * @param vigiladorId - ID del vigilador
    * @param puntoId - ID del punto
    * @param timestamp - Fecha y hora del escaneo
    * @param geo - Geolocalización { lat, long } o null
-   * @param novedades - Texto libre del vigilador
+   * @param novedades - Texto libre del vigilador (normalizado)
+   * @param servicioId - ID del servicio asociado (obligatorio en multi-servicio)
    */
   static async crearRegistro(
     vigiladorId: string,
     puntoId: number,
     timestamp: Date,
     geo: GeoLocation | null,
-    novedades: string
-    servicioId: string
+    novedades: string,
+    servicioId: string  // ← ¡Aquí estaba el error! Faltaba la coma anterior
   ) {
     await prisma.registro.create({
       data: {
         vigiladorId,
         puntoId,
-        servicioId,
+        servicioId,         // ← Ahora se usa correctamente
         timestamp,
         geolocalizacion: geo ? JSON.stringify(geo) : null,
         novedades: novedades || null,
       },
     });
+
+    logger.info(
+      { vigiladorId, puntoId, servicioId, timestamp },
+      '📝 Registro creado exitosamente'
+    );
   }
 
   /**
