@@ -24,9 +24,6 @@ const transport = process.env.NODE_ENV !== 'production'
     })
   : undefined; // En prod: salida JSON cruda (ideal para Railway logs parsing)
 
-const logger = pino({
-  ...baseConfig,
-  transport,
-});
+const logger = pino(baseConfig, transport);
 
 export default logger;

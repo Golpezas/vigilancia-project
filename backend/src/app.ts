@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import vigiladorRoutes from './routes/vigiladorRoutes';
 import { AppError } from './utils/errorHandler';
 import logger from './utils/logger'; // Logger centralizado Pino
+import adminRoutes from './routes/adminRoutes';
 
 const app = express();
 
@@ -21,6 +22,8 @@ app.use(express.json({ limit: '10mb' }));
 
 // Rutas desacopladas
 app.use('/api', vigiladorRoutes);
+
+app.use('/api/admin', adminRoutes); // ← Nueva ruta protegida
 
 // Health check con logging estructurado
 app.get('/', (req: Request, res: Response) => {
