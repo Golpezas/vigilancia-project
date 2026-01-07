@@ -122,6 +122,27 @@ export class VigiladorRepository {
     );
   }
 
+    /**
+   * Obtiene el vigilador completo con sus puntos ordenados por ID (secuencia natural)
+   * @param legajo Legajo del vigilador
+   * @returns Vigilador con servicio y lista ordenada de puntos asignados
+   */
+  static async findByLegajoWithPuntos(legajo: number) {
+    return await prisma.vigilador.findUnique({
+      where: { legajo },
+      include: {
+        servicio: {
+          include: {
+            puntos: {
+              include: { punto: true },
+              orderBy: { punto: { id: 'asc' } }, // Secuencia estricta por ID ascendente
+            },
+          },
+        },
+      },
+    });
+  }
+
   /**
    * Cierra la conexión Prisma al finalizar la app (best practice)
    */
