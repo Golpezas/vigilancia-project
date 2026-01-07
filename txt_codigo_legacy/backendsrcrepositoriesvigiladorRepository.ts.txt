@@ -1,14 +1,11 @@
 // src/repositories/vigiladorRepository.ts
 // Capa de acceso a datos - Patrón Repository para desacoplar Prisma del negocio
 // Mejores prácticas: type-safety total, normalización de data, documentación JSDoc
-// Singleton Prisma exportado (DRY - evita múltiples conexiones)
 
 import { PrismaClient } from '@prisma/client';
 import type { VigiladorEstado, GeoLocation } from '../types/index'; // type-only import
-import logger from '../utils/logger'; // ← Import centralizado del logger Pino
 
-// Singleton Prisma (best practice: una sola instancia por app)
-export const prisma = new PrismaClient({
+const prisma = new PrismaClient({
   log: ['query', 'info', 'warn', 'error'], // Opcional: logging para depuración en desarrollo
 });
 
@@ -18,23 +15,13 @@ export const prisma = new PrismaClient({
  */
 export class VigiladorRepository {
   /**
-   * Busca un vigilador por legajo o lo crea asignando automáticamente el servicio "Default"
-   * Normaliza el nombre (trim) y asegura relación con servicio (multi-servicio base)
+   * Busca un vigilador por legajo o lo crea si no existe
+   * Normaliza el nombre (trim)
    * @param legajo - Legajo único del vigilador
    * @param nombre - Nombre completo
    * @returns VigiladorEstado con id y datos
    */
   static async findOrCreate(legajo: number, nombre: string): Promise<VigiladorEstado> {
-    // Obtener servicio Default
-    const servicioDefault = await prisma.servicio.findUnique({
-      where: { nombre: 'Default' },
-    });
-
-    if (!servicioDefault) {
-      logger.error('Servicio "Default" no encontrado en DB - Ejecuta npx prisma db seed');
-      throw new Error('Configuración inválida: falta servicio Default');
-    }
-
     let vigilador = await prisma.vigilador.findUnique({
       where: { legajo },
     });
@@ -46,13 +33,8 @@ export class VigiladorRepository {
           legajo,
           ultimoPunto: 0,
           rondaActiva: false,
-          servicioId: servicioDefault.id,  // ← Asignación automática
         },
       });
-      logger.info(
-        { legajo, nombre: vigilador.nombre, servicioId: servicioDefault.id },
-        '🆕 Nuevo vigilador creado con servicio Default'
-      );
     }
 
     return vigilador as VigiladorEstado;
@@ -89,7 +71,7 @@ export class VigiladorRepository {
 
   /**
    * Crea un registro de escaneo
-   * Normaliza geolocalización a string JSON
+   * Normaliza geolocalización a string JSON (compatible con SQLite String @db.Text)
    * @param vigiladorId - ID del vigilador
    * @param puntoId - ID del punto
    * @param timestamp - Fecha y hora del escaneo
@@ -102,15 +84,13 @@ export class VigiladorRepository {
     timestamp: Date,
     geo: GeoLocation | null,
     novedades: string
-    servicioId: string
   ) {
     await prisma.registro.create({
       data: {
         vigiladorId,
         puntoId,
-        servicioId,
         timestamp,
-        geolocalizacion: geo ? JSON.stringify(geo) : null,
+        geolocalizacion: geo ? JSON.stringify(geo) : null, // ← Normalización a string
         novedades: novedades || null,
       },
     });

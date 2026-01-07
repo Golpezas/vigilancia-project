@@ -1,0 +1,45 @@
+// prisma/schema.prisma - Modelo de datos normalizado (3NF) para Prisma 5.22.0 + SQLite
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"  // ← PostgreSQL (Railway)
+  url      = env("DATABASE_URL")
+}
+
+// Vigilador se mantiene igual
+model Vigilador {
+  id           String    @id @default(uuid())
+  nombre       String
+  legajo       Int       @unique
+  ultimoPunto  Int       @default(0)
+  rondaActiva  Boolean   @default(false)
+  registros    Registro[]
+
+  @@map("vigilador")
+}
+
+model Punto {
+  id        Int       @id @default(autoincrement()) // Best practice: autoincrement
+  nombre    String    @unique
+  registros Registro[]
+
+  @@map("punto")
+}
+
+model Registro {
+  id              String    @id @default(uuid())
+  vigiladorId     String
+  puntoId         Int
+  timestamp       DateTime  @default(now())
+  geolocalizacion String?   // Geo REAL capturada en el momento del escaneo
+  novedades       String?
+
+  vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
+  punto           Punto     @relation(fields: [puntoId], references: [id])
+
+  @@index([vigiladorId, timestamp])
+  @@map("registro")
+}

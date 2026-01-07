@@ -10,9 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
     "rootDir": "./",
-    "typeRoots": ["./node_modules/@types", "./types"],  // ← Asegura búsqueda de tipos
-    "resolveJsonModule": true,                         // ← Para importar qrs-config.json
-    "types": ["node"]
+    "typeRoots": ["./node_modules/@types", "./types"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "scripts"]

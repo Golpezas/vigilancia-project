@@ -1,51 +1,78 @@
 // src/services/vigiladorService.ts
-// Lógica de negocio principal - Validación secuencial, normalización de data y logging estructurado Pino 2026
-// Mejores prácticas aplicadas: type-safety estricta, early validation, logging pre-throw para auditoría, JSDoc completo
+// Lógica de negocio principal - Validación secuencial dinámica por servicio
+// Mejores prácticas 2026: Conteo de puntos por servicio del vigilador (multi-cliente real)
+// Type-safety estricta, early validation, logging Pino estructurado, JSDoc completo
 
-import { VigiladorRepository } from '../repositories/vigiladorRepository';
+import { VigiladorRepository, prisma } from '../repositories/vigiladorRepository'; // ← Import prisma exportado
 import type { SubmitRegistroData, VigiladorEstado } from '../types/index';
 import { normalizeGeo, normalizeNovedades } from '../utils/normalizer';
 import { ForbiddenError, ValidationError } from '../utils/errorHandler';
-import logger from '../utils/logger'; // ← Import centralizado del logger Pino (resuelve Cannot find name 'logger')
+import logger from '../utils/logger';
 
 export class VigiladorService {
   /**
    * Procesa el escaneo de un punto QR.
-   * Valida secuencia estricta (1→2→...→10→1), normaliza datos y persiste registro.
-   * @param data Datos validados desde controller (SubmitRegistroData)
+   * Valida secuencia estricta basada en los puntos asignados al servicio del vigilador.
+   * Reinicio automático al completar la ronda del servicio.
+   * @param data Datos validados desde controller
    * @returns Respuesta normalizada para frontend
    */
   static async procesarEscaneo(data: SubmitRegistroData): Promise<{ success: true; mensaje: string }> {
     const { nombre, legajo, punto, novedades, timestamp, geo } = data;
 
-    // Validaciones básicas (early fail - mejor práctica)
-    if (punto < 1 || punto > 10) {
-      logger.warn({ legajo, punto }, '⚠️ Punto fuera de rango permitido (1-10)');
-      throw new ValidationError('Punto debe estar entre 1 y 10');
-    }
-
-    // Obtener o crear vigilador (idempotente)
+    // Obtener vigilador (crea si no existe con servicio Default)
     const vigilador: VigiladorEstado = await VigiladorRepository.findOrCreate(legajo, nombre.trim());
 
-    // Validación secuencial CRÍTICA con logging estructurado pre-throw (auditoría completa)
-    if (vigilador.ultimoPunto + 1 !== punto) {
-      if (!(vigilador.ultimoPunto === 10 && punto === 1)) {
-        const expected = vigilador.ultimoPunto + 1;
-        const errMsg = `Secuencia inválida. Último punto registrado: ${vigilador.ultimoPunto}. Esperado: ${expected}`;
+    // Cargar vigilador con su servicio y puntos asociados (include anidado - eficiente)
+    const vigiladorCompleto = await prisma.vigilador.findUnique({
+      where: { legajo },
+      include: {
+        servicio: {
+          include: {
+            puntos: {
+              include: { punto: true },
+              orderBy: { punto: { id: 'asc' } }, // Orden natural por ID (1,2,3...)
+            },
+          },
+        },
+      },
+    });
 
-        // ← Logging warn con contexto completo (Pino-compliant: objeto primero, mensaje segundo)
-        logger.warn({ legajo, punto, ultimoPunto: vigilador.ultimoPunto, expected }, '⚠️ Intento de secuencia inválida');
-
-        // Throw error operacional (capturado en handler global → 403 con mensaje descriptivo)
-        throw new ForbiddenError(errMsg);
-      }
-
-      // Caso válido: reinicio de ronda tras completar Punto 10
-      logger.info({ legajo }, '🔄 Reiniciando ronda desde Punto 10 a 1');
-      await VigiladorRepository.updateUltimoPunto(legajo, 0, false); // Resetea ultimoPunto y rondaActiva opcional
+    if (!vigiladorCompleto?.servicio) {
+      logger.error({ legajo }, 'Vigilador sin servicio asignado');
+      throw new ValidationError('Error de configuración: vigilador sin servicio');
     }
 
-    // Normalización de datos (DRY - centralizado en utils)
+    // Tipado explícito: sp es ServicioPunto con punto incluido
+    const puntosDelServicio = vigiladorCompleto.servicio.puntos.map((sp: { punto: { id: number; nombre: string } }) => sp.punto);
+    const totalPuntos = puntosDelServicio.length;
+
+    if (totalPuntos === 0) {
+      logger.error({ servicioId: vigiladorCompleto.servicio.id }, 'Servicio sin puntos asignados');
+      throw new ValidationError('El servicio no tiene puntos configurados');
+    }
+
+    // Validación de rango dinámico
+    if (punto < 1 || punto > totalPuntos) {
+      logger.warn({ legajo, punto, totalPuntos }, '⚠️ Punto fuera de rango del servicio');
+      throw new ValidationError(`Punto inválido: este servicio tiene ${totalPuntos} puntos (1-${totalPuntos})`);
+    }
+
+    // Validación secuencial dinámica
+    const esperado = vigilador.ultimoPunto === 0 ? 1 : vigilador.ultimoPunto + 1;
+    const esReinicioValido = punto === 1 && vigilador.ultimoPunto === totalPuntos;
+
+    if (punto !== esperado && !esReinicioValido) {
+      logger.warn(
+        { legajo, punto, ultimoPunto: vigilador.ultimoPunto, esperado, totalPuntos },
+        '⚠️ Intento de secuencia inválida'
+      );
+      throw new ForbiddenError(
+        `Secuencia inválida. Último punto: ${vigilador.ultimoPunto}. Esperado: ${esperado}`
+      );
+    }
+
+    // Normalización de datos
     const geoNormalizado = normalizeGeo(geo);
     const novedadesNormalizadas = normalizeNovedades(novedades);
 
@@ -55,18 +82,22 @@ export class VigiladorService {
       punto,
       new Date(timestamp),
       geoNormalizado,
-      novedadesNormalizadas
+      novedadesNormalizadas,
+      vigiladorCompleto.servicio.id
     );
 
-    // Actualización de estado del vigilador
-    const nuevoUltimo = punto === 10 ? 0 : punto; // Reset al completar ronda
-    const rondaActiva = punto !== 10;
-    await VigiladorRepository.updateUltimoPunto(legajo, nuevoUltimo, rondaActiva);
+    // Actualización de estado (dinámico por servicio)
+    let mensaje: string;
+    if (punto === totalPuntos) {
+      await VigiladorRepository.updateUltimoPunto(legajo, 0, false);
+      mensaje = '¡Ronda completada exitosamente!';
+      logger.info({ legajo, totalPuntos }, '🔄 Ronda completada - reiniciando');
+    } else {
+      await VigiladorRepository.updateUltimoPunto(legajo, punto, true);
+      mensaje = 'Punto registrado correctamente';
+    }
 
-    // Mensaje de éxito normalizado
-    const mensaje = punto === 10 ? '¡Ronda completada exitosamente!' : 'Punto registrado correctamente';
-
-    logger.info({ legajo, punto, mensaje }, '✅ Escaneo procesado exitosamente');
+    logger.info({ legajo, punto, totalPuntos, mensaje }, '✅ Escaneo procesado exitosamente');
 
     return { success: true, mensaje };
   }

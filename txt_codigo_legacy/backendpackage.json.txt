@@ -11,7 +11,7 @@
     "prisma:studio": "prisma studio",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "generate:qrs:multi": "ts-node scripts/generate-qrs-multi.ts",
+    "generate:qrs": "ts-node ./scripts/generate-qrs.ts",
     "db:seed": "prisma db seed"
   },
   "prisma": {
@@ -20,8 +20,6 @@
   "dependencies": {
     "@prisma/client": "^5.7.0",
     "cors": "^2.8.5",
-    "date-fns": "^4.1.0",
-    "date-fns-tz": "^3.2.0",
     "express": "^4.18.2",
     "helmet": "^7.0.0",
     "pino": "^9.14.0",
