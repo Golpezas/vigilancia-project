@@ -82,7 +82,8 @@ export class VigiladorService {
       punto,
       new Date(timestamp),
       geoNormalizado,
-      novedadesNormalizadas
+      novedadesNormalizadas,
+      vigiladorCompleto.servicio.id
     );
 
     // Actualización de estado (dinámico por servicio)

@@ -102,11 +102,13 @@ export class VigiladorRepository {
     timestamp: Date,
     geo: GeoLocation | null,
     novedades: string
+    servicioId: string
   ) {
     await prisma.registro.create({
       data: {
         vigiladorId,
         puntoId,
+        servicioId,
         timestamp,
         geolocalizacion: geo ? JSON.stringify(geo) : null,
         novedades: novedades || null,

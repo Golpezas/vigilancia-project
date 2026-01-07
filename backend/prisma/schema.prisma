@@ -11,14 +11,14 @@ datasource db {
 }
 
 model Servicio {
-  id          String    @id @default(uuid())
-  nombre      String    @unique
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
+  id        String          @id @default(uuid())
+  nombre    String          @unique
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
   vigiladores Vigilador[]
-  puntos      ServicioPunto[]  // ← Relación many-to-many con Punto
-
+  puntos    ServicioPunto[]
+  registros Registro[]      // ← NUEVO: relación opuesta obligatoria para Prisma
+  
   @@map("servicio")
 }
 
@@ -66,17 +66,19 @@ model Registro {
   id              String    @id @default(uuid())
   vigiladorId     String
   puntoId         Int
+  servicioId      String    // ← NUEVO
   timestamp       DateTime  @default(now())
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
-
   geolocalizacion String?
   novedades       String?
 
   vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
   punto           Punto     @relation(fields: [puntoId], references: [id])
+  servicio        Servicio  @relation(fields: [servicioId], references: [id])  // ← NUEVO
 
   @@index([vigiladorId, timestamp])
   @@index([vigiladorId, createdAt])
+  @@index([servicioId])  // ← NUEVO: para filtros por cliente
   @@map("registro")
 }

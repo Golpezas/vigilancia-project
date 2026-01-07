@@ -1,62 +1,111 @@
 // prisma/seed.ts
-// Seed idempotente para servicios, puntos y asignación de puntos por servicio
-// Best practice 2026: upsert completo, logging estructurado, normalización multi-servicio
+// Seed idempotente avanzado multi-servicio - Best practices 2026
+// Crea catálogo global de puntos + múltiples servicios con asignaciones personalizadas
+// Logging estructurado, upsert completo, normalización de nombres
 
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const puntos = [
-  { nombre: 'Entrada Principal' },
-  { nombre: 'Sector Producción' },
-  { nombre: 'Depósito' },
-  { nombre: 'Salida Emergencia' },
-  { nombre: 'Oficinas' },
-  { nombre: 'Patio Trasero' },
+// Catálogo maestro de puntos disponibles (global, reutilizable entre servicios)
+const catalogoPuntos = [
+  'Entrada Principal',
+  'Sector Producción',
+  'Depósito',
+  'Salida Emergencia',
+  'Oficinas',
+  'Patio Trasero',
+  'Sector Logística',
+  'Sala de Servidores',
+];
+
+// Configuración de servicios de ejemplo con sus puntos asignados
+const serviciosConfig = [
+  {
+    nombre: 'Default',
+    puntosAsignados: [
+      'Entrada Principal',
+      'Sector Producción',
+      'Depósito',
+      'Salida Emergencia',
+      'Oficinas',
+      'Patio Trasero',
+    ],
+  },
+  {
+    nombre: 'Cliente Norte',
+    puntosAsignados: [
+      'Entrada Principal',
+      'Depósito',
+      'Patio Trasero',
+      'Sala de Servidores',
+    ],
+  },
+  {
+    nombre: 'Cliente Sur',
+    puntosAsignados: [
+      'Entrada Principal',
+      'Sector Producción',
+      'Salida Emergencia',
+      'Sector Logística',
+    ],
+  },
 ];
 
 async function main() {
-  console.log('🌱 Iniciando seeding de servicio, puntos y asignación...');
+  console.log('🌱 Iniciando seeding multi-servicio avanzado...');
 
-  // 1. Servicio por defecto
-  const servicioDefault = await prisma.servicio.upsert({
-    where: { nombre: 'Default' },
-    update: {},
-    create: { nombre: 'Default' },
-  });
-  console.log(`✅ Servicio "${servicioDefault.nombre}" (id: ${servicioDefault.id}) sincronizado`);
-
-  // 2. Puntos
-  const puntosCreados = [];
-  for (const punto of puntos) {
-    const result = await prisma.punto.upsert({
-      where: { nombre: punto.nombre },
+  // 1. Crear catálogo global de puntos (idempotente)
+  const puntosCreados = new Map<string, { id: number; nombre: string }>();
+  for (const nombre of catalogoPuntos) {
+    const punto = await prisma.punto.upsert({
+      where: { nombre },
       update: {},
-      create: punto,
+      create: { nombre },
     });
-    puntosCreados.push(result);
-    console.log(`✅ Punto "${result.nombre}" (id: ${result.id}) sincronizado`);
+    puntosCreados.set(nombre, punto);
+    console.log(`✅ Punto global "${punto.nombre}" (id: ${punto.id}) sincronizado`);
   }
 
-  // 3. Asignar todos los puntos al servicio Default (idempotente)
-  for (const punto of puntosCreados) {
-    await prisma.servicioPunto.upsert({
-      where: {
-        servicioId_puntoId: {
-          servicioId: servicioDefault.id,
+  // 2. Crear servicios y asignar puntos personalizados
+  let totalAsignaciones = 0;
+  for (const config of serviciosConfig) {
+    const servicio = await prisma.servicio.upsert({
+      where: { nombre: config.nombre },
+      update: {},
+      create: { nombre: config.nombre },
+    });
+    console.log(`✅ Servicio "${servicio.nombre}" (id: ${servicio.id}) sincronizado`);
+
+    for (const nombrePunto of config.puntosAsignados) {
+      const punto = puntosCreados.get(nombrePunto);
+      if (!punto) {
+        console.warn(`⚠️ Punto "${nombrePunto}" no encontrado en catálogo`);
+        continue;
+      }
+
+      await prisma.servicioPunto.upsert({
+        where: {
+          servicioId_puntoId: {
+            servicioId: servicio.id,
+            puntoId: punto.id,
+          },
+        },
+        update: {},
+        create: {
+          servicioId: servicio.id,
           puntoId: punto.id,
         },
-      },
-      update: {},
-      create: {
-        servicioId: servicioDefault.id,
-        puntoId: punto.id,
-      },
-    });
+      });
+      totalAsignaciones++;
+    }
+    console.log(`   ↳ ${config.puntosAsignados.length} puntos asignados a "${servicio.nombre}"`);
   }
-  console.log(`✅ Todos los ${puntosCreados.length} puntos asignados al servicio "Default"`);
 
-  console.log('🎉 Seeding completado exitosamente');
+  console.log(`\n🎉 Seeding completado exitosamente`);
+  console.log(`   Puntos globales: ${catalogoPuntos.length}`);
+  console.log(`   Servicios creados: ${serviciosConfig.length}`);
+  console.log(`   Total asignaciones: ${totalAsignaciones}`);
 }
 
 main()
