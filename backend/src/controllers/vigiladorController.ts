@@ -62,7 +62,7 @@ export class VigiladorController {
    * Obtiene el estado actual de un vigilador por legajo.
    * Logging Pino-compliant en todas las ramas.
    */
-  static async getEstado(req: Request, res: Response, next: NextFunction) {
+  /* static async getEstado(req: Request, res: Response, next: NextFunction) {
     logger.info({ legajo: req.params.legajo }, '📥 Request a /api/estado/:legajo');
 
     try {
@@ -89,5 +89,5 @@ export class VigiladorController {
       logger.error(errorContext, '❌ Error en getEstado');
       next(err);
     }
-  }
-}
+  }*/
+} 

@@ -6,6 +6,6 @@ import { VigiladorController } from '../controllers/vigiladorController'; // ←
 const router = Router();
 
 router.post('/submit', VigiladorController.submit);
-router.get('/estado/:legajo', VigiladorController.getEstado);
+// router.get('/estado/:legajo', VigiladorController.getEstado);
 
 export default router;
