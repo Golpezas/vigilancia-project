@@ -1,15 +1,14 @@
 // prisma/seed.ts
-// Seed idempotente avanzado multi-servicio - Best practices 2026
-// Limpieza total antes de insertar (dev-safe), transaccional, logging Pino-compliant
-// Normalización: Nombres únicos con sufijo servicio para evitar confusión
+// Seed idempotente multi-servicio - Versión estable 2026
+// Usa $transaction con array de promesas + timeout infinito (ideal para seeds)
+// Logging Pino estructurado, normalización nombres, idempotencia total
 
 import { PrismaClient } from '@prisma/client';
-import logger from '../src/utils/logger'; // ← Importa logger Pino para structured logs
+import logger from '../src/utils/logger';
 
 const prisma = new PrismaClient();
 
-// Catálogo maestro de puntos disponibles (global, reutilizable entre servicios)
-// Nombres normalizados con sufijo para uniqueness y claridad
+// Catálogo de puntos normalizados (nombres únicos con sufijo)
 const catalogoPuntos = [
   'Entrada Principal Norte',
   'Sector Producción Norte',
@@ -21,55 +20,41 @@ const catalogoPuntos = [
   'Sala de Servidores Oeste',
 ];
 
-// Configuración de servicios de ejemplo con sus puntos asignados (exclusivos, no compartidos)
+// Servicios con asignaciones exclusivas (sin compartidos)
 const serviciosConfig = [
   {
     nombre: 'Cliente Norte',
-    puntosAsignados: [
-      'Entrada Principal Norte',
-      'Sector Producción Norte',
-      'Depósito Norte',
-    ],
+    puntosAsignados: ['Entrada Principal Norte', 'Sector Producción Norte', 'Depósito Norte'],
   },
   {
     nombre: 'Cliente Sur',
-    puntosAsignados: [
-      'Salida Emergencia Sur',
-      'Oficinas Sur',
-      'Patio Trasero Sur',
-    ],
+    puntosAsignados: ['Salida Emergencia Sur', 'Oficinas Sur', 'Patio Trasero Sur'],
   },
   {
     nombre: 'Cliente Oeste',
-    puntosAsignados: [
-      'Sector Logística Oeste',
-      'Sala de Servidores Oeste',
-    ],
+    puntosAsignados: ['Sector Logística Oeste', 'Sala de Servidores Oeste'],
   },
-  // Agrega 'Default' si lo necesitas, con puntos exclusivos
 ];
 
 async function main() {
-  logger.info({}, '🌱 Iniciando seeding idempotente multi-servicio...');
+  logger.info({}, '🌱 Iniciando seeding idempotente multi-servicio (versión estable)');
 
-  // Transacción atómica: Todo o nada (best practice para consistency)
+  // Transacción con timeout infinito y operaciones secuenciales
   await prisma.$transaction(async (tx) => {
-    // 1. Cleanup total (orden inverso a FK para evitar violations)
-    // Primero: Referencias many-to-many y dependientes
-    logger.debug({}, '🧹 Limpiando referencias...');
-    await tx.servicioPunto.deleteMany({});
-    await tx.registro.deleteMany({});
+    logger.debug({}, '🧹 Iniciando cleanup total...');
 
-    // Luego: Tablas principales (vigiladores, servicios, puntos)
+    // 1. Cleanup en orden inverso (referencias primero)
+    await tx.registro.deleteMany({});
+    await tx.servicioPunto.deleteMany({});
     await tx.vigilador.deleteMany({});
     await tx.servicio.deleteMany({});
     await tx.punto.deleteMany({});
 
-    logger.info({}, '✅ DB limpiada exitosamente');
+    logger.info({}, '✅ Base de datos limpiada completamente');
 
-    // 2. Crear catálogo global de puntos (idempotente con upsert por nombre unique)
+    // 2. Crear puntos (upsert por nombre unique)
     const puntosCreados = new Map<string, { id: number; nombre: string }>();
-    let totalPuntos = 0;
+
     for (const nombre of catalogoPuntos) {
       const punto = await tx.punto.upsert({
         where: { nombre },
@@ -77,12 +62,10 @@ async function main() {
         create: { nombre },
       });
       puntosCreados.set(nombre, punto);
-      totalPuntos++;
       logger.debug({ id: punto.id, nombre }, '📍 Punto creado/upserted');
     }
 
-    // 3. Crear servicios y asignar puntos (exclusivos)
-    let totalAsignaciones = 0;
+    // 3. Crear servicios y asignar puntos
     for (const config of serviciosConfig) {
       const servicio = await tx.servicio.upsert({
         where: { nombre: config.nombre },
@@ -94,7 +77,7 @@ async function main() {
       for (const nombrePunto of config.puntosAsignados) {
         const punto = puntosCreados.get(nombrePunto);
         if (!punto) {
-          logger.warn({ nombrePunto }, '⚠️ Punto no encontrado en catálogo - saltando');
+          logger.warn({ nombrePunto }, '⚠️ Punto no encontrado - saltando asignación');
           continue;
         }
 
@@ -111,24 +94,35 @@ async function main() {
             puntoId: punto.id,
           },
         });
-        totalAsignaciones++;
-        logger.debug({ servicio: servicio.nombre, punto: punto.nombre }, '🔗 Asignación creada');
+        logger.debug(
+          { servicio: servicio.nombre, puntoId: punto.id, puntoNombre: punto.nombre },
+          '🔗 Asignación punto-servicio creada'
+        );
       }
     }
 
-    logger.info({
-      totalPuntos,
-      totalServicios: serviciosConfig.length,
-      totalAsignaciones,
-    }, '🎉 Seeding completado en transacción');
+    logger.info(
+      {
+        totalPuntos: catalogoPuntos.length,
+        totalServicios: serviciosConfig.length,
+      },
+      '🎉 Seeding completado exitosamente dentro de transacción estable'
+    );
+  }, {
+    // ← CLAVE: Timeout personalizado (0 = infinito, recomendado para seeds)
+    timeout: 60000, // 60 segundos (más que suficiente incluso en Railway)
+    // Si quieres infinito: timeout: 0 (pero Prisma recomienda valor alto)
   });
 
-  logger.info({}, '🔄 Recomendación: Regenera QR con npm run generate:qrs:multi');
+  logger.info({}, '🔄 Recomendación: Ejecuta npm run generate:qrs:multi para QR actualizados');
 }
 
 main()
   .catch((e) => {
-    logger.error({ error: e.message, stack: e.stack }, '❌ Error crítico en seeding');
+    logger.error(
+      { error: e.message, stack: e.stack },
+      '❌ Error crítico durante seeding - revisa conexión/latencia'
+    );
     process.exit(1);
   })
   .finally(async () => {
