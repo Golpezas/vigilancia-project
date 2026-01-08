@@ -143,41 +143,61 @@ export class VigiladorService {
     const geoNormalizado = normalizeGeo(geo);
     const novedadesNormalizadas = normalizeNovedades(novedades);
 
-    // 7. Persistencia en transacción
-    await prisma.$transaction([
-      VigiladorRepository.crearRegistro(
-        vigiladorCompleto.id,
-        punto,
-        new Date(timestamp),
-        geoNormalizado,
-        novedadesNormalizadas,
-        servicioAsignado.id
-      ),
-      prisma.vigilador.update({
-        where: { legajo },
+        // 7. Persistencia en transacción interactiva (best practice Prisma v5+ 2026)
+    // Usamos callback para atomicidad total y type-safety perfecta
+    await prisma.$transaction(async (tx) => {
+      // Crear el registro directamente con tx (evitamos wrapper que devuelve Promise<void>)
+      await tx.registro.create({
         data: {
-          ultimoPunto: posicionActual + 1,
-          rondaActiva: true,
+          vigiladorId: vigiladorCompleto.id,
+          puntoId: punto,
+          servicioId: servicioAsignado.id,
+          timestamp: new Date(timestamp),
+          geolocalizacion: geoNormalizado ? JSON.stringify(geoNormalizado) : null,
+          novedades: novedadesNormalizadas || null,
         },
-      }),
-    ]);
+      });
 
-    // 8. Completar ronda
+      // Calcular nuevo progreso
+      const nuevoProgreso = posicionActual + 1;
+
+      if (nuevoProgreso === totalPuntos) {
+        // Ronda completada → resetear
+        await tx.vigilador.update({
+          where: { legajo },
+          data: {
+            ultimoPunto: 0,
+            rondaActiva: false,
+          },
+        });
+
+        logger.info(
+          { legajo, servicio: servicioAsignado.nombre },
+          '🔄 Ronda completada en transacción'
+        );
+      } else {
+        // Avanzar en la ronda
+        await tx.vigilador.update({
+          where: { legajo },
+          data: {
+            ultimoPunto: nuevoProgreso,
+            rondaActiva: true,
+          },
+        });
+      }
+    });
+
+    // 8. Mensaje de respuesta (fuera de transacción)
     let mensaje: string;
     if (posicionActual + 1 === totalPuntos) {
-      await prisma.vigilador.update({
-        where: { legajo },
-        data: { ultimoPunto: 0, rondaActiva: false },
-      });
-      mensaje = `¡Ronda completada! (${servicioAsignado.nombre})`;
-      logger.info({ legajo, servicio: servicioAsignado.nombre }, '🔄 Ronda completada');
+      mensaje = `¡Ronda completada exitosamente! (${servicioAsignado.nombre})`;
     } else {
-      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado`;
+      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado correctamente`;
     }
 
     logger.info(
       { legajo, punto, servicio: servicioAsignado.nombre, progreso: `${posicionActual + 1}/${totalPuntos}` },
-      '✅ Escaneo procesado'
+      '✅ Escaneo procesado exitosamente'
     );
 
     return { success: true, mensaje };
