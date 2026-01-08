@@ -9,47 +9,41 @@ const prisma = new PrismaClient();
 
 // Catálogo maestro de puntos disponibles (global, reutilizable entre servicios)
 const catalogoPuntos = [
-  'Entrada Principal',
-  'Sector Producción',
-  'Depósito',
-  'Salida Emergencia',
-  'Oficinas',
-  'Patio Trasero',
-  'Sector Logística',
-  'Sala de Servidores',
+  'Entrada Principal Norte', // id 1
+  'Sector Producción Norte', // 2
+  'Depósito Norte', // 3
+  'Salida Emergencia Sur', // 4
+  'Oficinas Sur', // 5
+  'Patio Trasero Sur', // 6
+  'Sector Logística Oeste', // 7
+  'Sala de Servidores Oeste', // 8
 ];
 
-// Configuración de servicios de ejemplo con sus puntos asignados
 const serviciosConfig = [
-  {
-    nombre: 'Default',
-    puntosAsignados: [
-      'Entrada Principal',
-      'Sector Producción',
-      'Depósito',
-      'Salida Emergencia',
-      'Oficinas',
-      'Patio Trasero',
-    ],
-  },
   {
     nombre: 'Cliente Norte',
     puntosAsignados: [
-      'Entrada Principal',
-      'Depósito',
-      'Patio Trasero',
-      'Sala de Servidores',
+      'Entrada Principal Norte',
+      'Sector Producción Norte',
+      'Depósito Norte',
     ],
   },
   {
     nombre: 'Cliente Sur',
     puntosAsignados: [
-      'Entrada Principal',
-      'Sector Producción',
-      'Salida Emergencia',
-      'Sector Logística',
+      'Salida Emergencia Sur',
+      'Oficinas Sur',
+      'Patio Trasero Sur',
     ],
   },
+  {
+    nombre: 'Cliente Oeste',
+    puntosAsignados: [
+      'Sector Logística Oeste',
+      'Sala de Servidores Oeste',
+    ],
+  },
+  // Elimina "Default" si no lo necesitas, o hazlo único
 ];
 
 async function main() {
