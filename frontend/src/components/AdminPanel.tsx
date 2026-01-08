@@ -38,6 +38,8 @@ export const AdminPanel: React.FC = () => {
       { id: 4, nombre: 'Salida Emergencia' },
       { id: 5, nombre: 'Oficinas' },
       { id: 6, nombre: 'Patio Trasero' },
+      { id: 7, nombre: 'Sector Logística' },
+      { id: 8, nombre: 'Sala de Servidores' },
     ];
 
     const loadPuntos = async () => {
