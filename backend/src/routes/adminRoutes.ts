@@ -1,30 +1,31 @@
 // src/routes/adminRoutes.ts
 // Rutas administrativas - Multi-servicio robusto 2026
-// Protección con API key, validación Zod estricta, logging estructurado
+// Protección con API key, validación Zod estricta, logging estructurado Pino
 
 import { Router } from 'express';
 import { prisma } from '../repositories/vigiladorRepository';
 import { z } from 'zod';
 import logger from '../utils/logger';
 import { ValidationError } from '../utils/errorHandler';
+import { Prisma } from '@prisma/client'; // ← IMPORT CLAVE
 
 const router = Router();
 
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'dev-key-change-in-prod';
 
 const requireAdmin = (req: any, res: any, next: any) => {
-  const apiKey = req.headers['x-admin-key'];
+  const apiKey = req.headers['x-admin-key'] as string | undefined;
   if (apiKey !== ADMIN_API_KEY) {
-    logger.warn({ ip: req.ip, path: req.path }, '⚠️ Acceso admin denegado - key inválida');
-    return res.status(401).json({ error: 'Acceso denegado' });
+    logger.warn({ ip: req.ip, path: req.path, providedKey: apiKey ? 'presente' : 'ausente' }, '⚠️ Acceso admin denegado');
+    return res.status(401).json({ error: 'Acceso denegado: clave API inválida' });
   }
   next();
 };
 
 // Schema para asignar servicio
 const AsignarServicioSchema = z.object({
-  legajo: z.number().int().positive(),
-  servicioNombre: z.string().min(3),
+  legajo: z.number().int().positive('Legajo debe ser positivo'),
+  servicioNombre: z.string().min(3, 'Nombre del servicio muy corto'),
 });
 
 router.post('/vigilador/asignar-servicio', requireAdmin, async (req, res) => {
@@ -51,7 +52,7 @@ router.post('/vigilador/asignar-servicio', requireAdmin, async (req, res) => {
 
     logger.info(
       { legajo, nuevoServicio: servicio.nombre, vigiladorId: vigilador.id },
-      '🔄 Servicio asignado a vigilador'
+      '✅ Servicio asignado manualmente a vigilador'
     );
 
     res.json({
@@ -63,36 +64,66 @@ router.post('/vigilador/asignar-servicio', requireAdmin, async (req, res) => {
         servicio: vigilador.servicio.nombre,
       },
     });
-  } catch (err) {
+  } catch (err: unknown) {
+    // 1. Errores de validación Zod
     if (err instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
+      logger.warn({ body: req.body, errors: err.errors }, 'Datos inválidos en asignación de servicio');
+      return res.status(400).json({
+        error: 'Datos inválidos',
+        details: err.errors.map(e => ({
+          campo: e.path.join('.'),
+          mensaje: e.message,
+        })),
+      });
     }
+
+    // 2. Nuestros errores personalizados
     if (err instanceof ValidationError) {
+      logger.warn({ body: req.body, message: err.message }, 'Validación fallida');
       return res.status(400).json({ error: err.message });
     }
-    if (err?.code === 'P2025') { // Prisma: registro no encontrado
-      return res.status(404).json({ error: 'Vigilador no encontrado' });
+
+    // 3. Errores conocidos de Prisma (P2025 = registro no encontrado en update)
+    if (err instanceof Prisma.PrismaClientKnownRequestError) {
+      if (err.code === 'P2025') {
+        logger.warn({ legajo: req.body.legajo }, 'Vigilador no encontrado al asignar servicio');
+        return res.status(404).json({ error: 'Vigilador no encontrado' });
+      }
     }
-    logger.error({ err, body: req.body }, '🚨 Error asignando servicio');
-    res.status(500).json({ error: 'Error interno' });
+
+    // 4. Error inesperado
+    const message = err instanceof Error ? err.message : 'Error desconocido';
+    const stack = err instanceof Error ? err.stack : undefined;
+
+    logger.error(
+      { err, message, stack, body: req.body },
+      '🚨 Error inesperado en asignación de servicio'
+    );
+
+    res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
 // Listar vigiladores con su servicio (útil para panel admin)
 router.get('/vigiladores', requireAdmin, async (req, res) => {
-  const vigiladores = await prisma.vigilador.findMany({
-    select: {
-      id: true,
-      nombre: true,
-      legajo: true,
-      ultimoPunto: true,
-      rondaActiva: true,
-      servicio: { select: { nombre: true } },
-    },
-    orderBy: { legajo: 'asc' },
-  });
+  try {
+    const vigiladores = await prisma.vigilador.findMany({
+      select: {
+        id: true,
+        nombre: true,
+        legajo: true,
+        ultimoPunto: true,
+        rondaActiva: true,
+        servicio: { select: { nombre: true } },
+      },
+      orderBy: { legajo: 'asc' },
+    });
 
-  res.json({ vigiladores });
+    res.json({ vigiladores });
+  } catch (err: unknown) {
+    logger.error({ err }, 'Error listando vigiladores');
+    res.status(500).json({ error: 'Error interno' });
+  }
 });
 
 export default router;
