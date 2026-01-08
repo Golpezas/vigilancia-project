@@ -21,7 +21,7 @@ interface ServicioCreadoResponse {
   };
 }
 
-const ADMIN_KEY = 'tu-clave-secreta-muy-larga-y-segura-2026'; // ← Cambiar por env segura
+const ADMIN_KEY = 'G4mul0t3@2106'; // ← Cambiar por env segura
 
 export const AdminPanel: React.FC = () => {
   const [nombre, setNombre] = useState<string>('');
