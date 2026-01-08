@@ -126,4 +126,62 @@ router.get('/vigiladores', requireAdmin, async (req, res) => {
   }
 });
 
+// Schema para crear servicio (normalizado de versiones iniciales)
+const CreateServicioSchema = z.object({
+  nombre: z.string().min(3, 'Nombre muy corto').max(100),
+  puntoIds: z.array(z.number().int().positive()).min(1, 'Al menos un punto'),
+});
+
+router.post('/servicio', requireAdmin, async (req, res) => {
+  try {
+    const { nombre, puntoIds } = CreateServicioSchema.parse(req.body);
+
+    // Transacción para atomicidad (crear servicio + asignar puntos)
+    const servicio = await prisma.$transaction(async (tx) => {
+      const nuevoServicio = await tx.servicio.upsert({
+        where: { nombre },
+        update: {},
+        create: { nombre: nombre.trim() },
+      });
+
+      for (const puntoId of puntoIds) {
+        await tx.servicioPunto.upsert({
+          where: {
+            servicioId_puntoId: {
+              servicioId: nuevoServicio.id,
+              puntoId,
+            },
+          },
+          update: {},
+          create: {
+            servicioId: nuevoServicio.id,
+            puntoId,
+          },
+        });
+      }
+
+      return nuevoServicio;
+    });
+
+    logger.info({ servicioId: servicio.id, nombre: servicio.nombre, puntos: puntoIds.length }, '✅ Servicio creado/actualizado');
+
+    res.json({
+      success: true,
+      servicio: {
+        id: servicio.id,
+        nombre: servicio.nombre,
+      },
+    });
+  } catch (err: unknown) {
+    if (err instanceof z.ZodError) {
+      logger.warn({ body: req.body, errors: err.errors }, 'Datos inválidos en creación de servicio');
+      return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
+    }
+
+    const message = err instanceof Error ? err.message : 'Error desconocido';
+    logger.error({ err, message, body: req.body }, '🚨 Error creando servicio');
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
+
 export default router;
