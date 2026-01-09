@@ -1,7 +1,8 @@
 // prisma/seed.ts
-// Seed idempotente multi-servicio - Versión estable 2026
+// Seed idempotente multi-servicio - Versión estable 2026 con reset sequence dev-only
 // Usa $transaction con array de promesas + timeout infinito (ideal para seeds)
 // Logging Pino estructurado, normalización nombres, idempotencia total
+// NUEVO: Reset sequence para IDs desde 1 (solo dev - escalable y seguro)
 
 import { PrismaClient } from '@prisma/client';
 import logger from '../src/utils/logger';
@@ -37,9 +38,9 @@ const serviciosConfig = [
 ];
 
 async function main() {
-  logger.info({}, '🌱 Iniciando seeding idempotente multi-servicio (versión estable)');
+  logger.info({}, '🌱 Iniciando seeding idempotente multi-servicio (con reset sequence dev-only)');
 
-  // Transacción con timeout infinito y operaciones secuenciales
+  // Transacción con timeout alto y operaciones secuenciales
   await prisma.$transaction(async (tx) => {
     logger.debug({}, '🧹 Iniciando cleanup total...');
 
@@ -52,7 +53,18 @@ async function main() {
 
     logger.info({}, '✅ Base de datos limpiada completamente');
 
-    // 2. Crear puntos (upsert por nombre unique)
+    // 2. NUEVO: Reset sequences para autoincrements (solo en development - best practice escalable)
+    if (process.env.NODE_ENV === 'development') {
+      logger.debug({}, '🔄 Reseteando sequences para IDs desde 1 (dev-only)...');
+      // Reset sequence para tabla 'punto' (ajusta si hay más autoincrements, e.g., otras tablas)
+      await prisma.$executeRawUnsafe(`ALTER SEQUENCE punto_id_seq RESTART WITH 1;`);
+      // Si hay más: e.g., await prisma.$executeRawUnsafe(`ALTER SEQUENCE otra_tabla_id_seq RESTART WITH 1;`);
+      logger.info({}, '✅ Sequences reseteadas exitosamente (IDs comenzarán en 1)');
+    } else {
+      logger.warn({}, '⚠️ Skip reset sequences en non-dev env (seguridad prod)');
+    }
+
+    // 3. Crear puntos (upsert por nombre unique) - Ahora IDs desde 1 en dev
     const puntosCreados = new Map<string, { id: number; nombre: string }>();
 
     for (const nombre of catalogoPuntos) {
@@ -65,7 +77,7 @@ async function main() {
       logger.debug({ id: punto.id, nombre }, '📍 Punto creado/upserted');
     }
 
-    // 3. Crear servicios y asignar puntos
+    // 4. Crear servicios y asignar puntos
     for (const config of serviciosConfig) {
       const servicio = await tx.servicio.upsert({
         where: { nombre: config.nombre },
@@ -109,9 +121,7 @@ async function main() {
       '🎉 Seeding completado exitosamente dentro de transacción estable'
     );
   }, {
-    // ← CLAVE: Timeout personalizado (0 = infinito, recomendado para seeds)
-    timeout: 60000, // 60 segundos (más que suficiente incluso en Railway)
-    // Si quieres infinito: timeout: 0 (pero Prisma recomienda valor alto)
+    timeout: 60000, // 60s - suficiente para raw queries
   });
 
   logger.info({}, '🔄 Recomendación: Ejecuta npm run generate:qrs:multi para QR actualizados');
