@@ -21,7 +21,7 @@ export class VigiladorService {
     const { nombre, legajo, punto, novedades, timestamp, geo } = data;
 
     // 1. Buscar o crear vigilador (sin servicio preasignado)
-    let vigilador: VigiladorEstado = await VigiladorRepository.findOrCreate(legajo, nombre.trim());
+    const vigilador: VigiladorEstado = await VigiladorRepository.findOrCreate(legajo, nombre.trim(), punto);
 
     // 2. Cargar datos completos (incluye servicio si ya está asignado)
     const vigiladorCompleto = await prisma.vigilador.findUnique({
