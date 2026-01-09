@@ -2,11 +2,13 @@
 import { useState } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
+import { AdminPanel } from './components/AdminPanel'; // ← Importar aquí
 
 function App() {
   const [punto, setPunto] = useState<number | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false); // ← Estado para toggle admin (temporal)
 
   const handleScan = (punto: number) => {
     setPunto(punto);
@@ -30,10 +32,19 @@ function App() {
     setTimeout(() => setError(null), 5000);
   };
 
+  // Toggle temporal para admin (en prod, usa auth/routing)
+  const toggleAdmin = () => setIsAdmin(!isAdmin);
+
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-800 text-white p-6 text-center">
         <h1 className="text-2xl font-bold">Control de Rondas - Vigilancia</h1>
+        <button 
+          onClick={toggleAdmin}
+          className="mt-2 px-4 py-1 bg-white text-blue-800 rounded font-medium"
+        >
+          {isAdmin ? 'Volver a Vigilador' : 'Modo Admin'}
+        </button>
       </header>
 
       <main className="container mx-auto px-4">
@@ -49,7 +60,9 @@ function App() {
           </div>
         )}
 
-        {!punto ? (
+        {isAdmin ? (
+          <AdminPanel /> // ← Renderiza aquí
+        ) : !punto ? (
           <QRScanner onScan={handleScan} onError={handleError} />
         ) : (
           <RegistroForm

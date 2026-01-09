@@ -100,53 +100,56 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           throw new Error(response.data.error || 'Error desconocido');
         }
       } catch (error: unknown) {
-        let errMsg = 'Error desconocido';
+        // Inicialización normalizada de variables (best practice: evita undefineds)
+        let errMsg = 'Error desconocido'; // Fallback base
         let code: string | undefined = undefined;
         let responseData: unknown = undefined;
         let responseStatus: number | undefined = undefined;
 
+        // Narrowing exhaustivo y type-safe para error genérico
         if (error instanceof Error) {
           errMsg = error.message;
         }
 
-        if (isAxiosError(error)) {
-          code = error.code;
-          responseData = error.response?.data;
-          responseStatus = error.response?.status;
+        // Chequeo específico para AxiosError (usa isAxiosError para narrowing automático)
+        if (isAxiosError(error) && error.response) {
+          // TS ahora infiere que error es AxiosError con response
+          const { data, status } = error.response;
+          code = error.code; // e.g., 'ECONNABORTED' para timeouts
+          responseData = data; // Podría ser { error: string } u otro
+          responseStatus = status; // e.g., 400, 403, 500
+
+          // Normalización del mensaje del backend (DRY: un solo lugar para chequeos)
+          if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
+            errMsg = data.error; // Usa directamente el error del backend si existe
+          } else {
+            errMsg = `Error del servidor (código ${status})`; // Fallback genérico con status
+          }
         }
 
-        // ← MANEJO TYPE-SAFE COMPLETO SIN 'any' NI VIOLACIONES ESLINT/TS
-        let displayMsg = 'Error desconocido';
-
-        // Narrowing exhaustivo y seguro para errores del backend (403, 400, etc.)
-        const isApiErrorResponse =
-          responseStatus !== undefined &&
-          typeof responseData === 'object' &&
-          responseData !== null &&
-          'error' in responseData &&
-          typeof (responseData as Record<string, unknown>).error === 'string';
-
-        if (isApiErrorResponse) {
-          // Dentro de este bloque, TS infiere que responseData tiene { error: string }
-          displayMsg = (responseData as { error: string }).error;
+        // Lógica de mensajes personalizados (integra tus chequeos aquí para evitar duplicación)
+        let displayMsg = errMsg; // Normalizado para UX
+        if (errMsg.includes('no pertenece') || errMsg.includes('siguiente') || errMsg.includes('Inicia la ronda')) {
+          displayMsg = errMsg; // Muestra mensaje claro del backend sin cambios
         } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
           displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
-        } else {
-          displayMsg = errMsg;
-        }
+        } else if (responseStatus === 500) {
+          displayMsg = 'Error interno del servidor. Intenta más tarde.';
+        } // Agrega más status si necesitas (e.g., 401 para auth)
 
-        // Log estructurado para depuración (visible en Vercel / browser console)
+        // Logging estructurado (mejor práctica: objeto JSON para traceabilidad)
         console.error('❌ Error en submit:', {
-          message: errMsg,
-          status: responseStatus,
+          originalMessage: errMsg,
           code,
+          status: responseStatus,
           response: responseData,
+          stack: error instanceof Error ? error.stack : undefined, // Opcional para dev
         });
 
-        // ← Mensaje final que ve el vigilador: claro, útil y sin códigos técnicos
+        // Llama a onError con el mensaje normalizado y amigable para el usuario
         onError(displayMsg);
       } finally {
-        setSubmitting(false);
+        setSubmitting(false); // Siempre ejecuta (best practice: evita submits stuck)
       }
     },
   });

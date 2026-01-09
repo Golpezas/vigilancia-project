@@ -6,6 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import type { VigiladorEstado, GeoLocation } from '../types/index'; // type-only import
 import logger from '../utils/logger'; // ← Import centralizado del logger Pino
+import { ValidationError } from '../utils/errorHandler'; // ← IMPORT CLAVE FALTANTE
 
 // Singleton Prisma (best practice: una sola instancia por app)
 export const prisma = new PrismaClient({
@@ -18,44 +19,85 @@ export const prisma = new PrismaClient({
  */
 export class VigiladorRepository {
   /**
-   * Busca un vigilador por legajo o lo crea asignando automáticamente el servicio "Default"
-   * Normaliza el nombre (trim) y asegura relación con servicio (multi-servicio base)
-   * @param legajo - Legajo único del vigilador
-   * @param nombre - Nombre completo
-   * @returns VigiladorEstado con id y datos
+   * Busca vigilador por legajo. Si no existe, lo crea y asigna servicio basado en punto escaneado.
+   * Lógica multi-servicio real 2026: infiere servicio del punto (sin "Default").
+   * Type-safety estricta con Prisma generated types.
+   * @param legajo Legajo único
+   * @param nombre Nombre completo
+   * @param puntoId ID del punto escaneado (para inferir servicio)
+   * @returns VigiladorEstado con servicio asignado
    */
-  static async findOrCreate(legajo: number, nombre: string): Promise<VigiladorEstado> {
-    // Obtener servicio Default
-    const servicioDefault = await prisma.servicio.findUnique({
-      where: { nombre: 'Default' },
-    });
-
-    if (!servicioDefault) {
-      logger.error('Servicio "Default" no encontrado en DB - Ejecuta npx prisma db seed');
-      throw new Error('Configuración inválida: falta servicio Default');
-    }
-
-    let vigilador = await prisma.vigilador.findUnique({
+  static async findOrCreate(legajo: number, nombre: string, puntoId: number): Promise<VigiladorEstado> {
+    // 1. Buscar vigilador existente
+    const vigiladorExistente = await prisma.vigilador.findUnique({
       where: { legajo },
+      include: { servicio: true },
     });
 
-    if (!vigilador) {
-      vigilador = await prisma.vigilador.create({
-        data: {
-          nombre: nombre.trim(),
-          legajo,
-          ultimoPunto: 0,
-          rondaActiva: false,
-          servicioId: servicioDefault.id,  // ← Asignación automática
-        },
-      });
-      logger.info(
-        { legajo, nombre: vigilador.nombre, servicioId: servicioDefault.id },
-        '🆕 Nuevo vigilador creado con servicio Default'
-      );
+    if (vigiladorExistente) {
+      logger.debug({ legajo, servicio: vigiladorExistente.servicio.nombre }, '🔍 Vigilador existente encontrado');
+      return {
+        id: vigiladorExistente.id,
+        nombre: vigiladorExistente.nombre,
+        legajo: vigiladorExistente.legajo,
+        ultimoPunto: vigiladorExistente.ultimoPunto,
+        rondaActiva: vigiladorExistente.rondaActiva,
+      };
     }
 
-    return vigilador as VigiladorEstado;
+    // 2. Inferir servicio desde el punto escaneado (puntos exclusivos por diseño actual)
+    const servicioPunto = await prisma.servicioPunto.findFirst({
+      where: {
+        puntoId: puntoId,
+      },
+      include: {
+        servicio: true, // ← Trae datos del servicio relacionado
+      },
+    });
+
+    if (!servicioPunto || !servicioPunto.servicio) {
+      logger.error({ legajo, puntoId }, '🚨 Punto escaneado no pertenece a ningún servicio configurado');
+      throw new ValidationError('Punto inválido: no asignado a ningún cliente/servicio');
+    }
+
+    // Validación adicional (escalable para futuro con compartidos)
+    const countAsignaciones = await prisma.servicioPunto.count({
+      where: { puntoId },
+    });
+    if (countAsignaciones > 1) {
+      logger.error({ puntoId, count: countAsignaciones }, '🚨 Punto compartido entre múltiples servicios - no permitido');
+      throw new ValidationError('Error de configuración: punto asignado a múltiples clientes');
+    }
+
+    // 3. Crear nuevo vigilador con servicio inferido
+    const nuevoVigilador = await prisma.vigilador.create({
+      data: {
+        nombre: nombre.trim(),
+        legajo,
+        servicioId: servicioPunto.servicio.id,
+        ultimoPunto: 0,
+        rondaActiva: false,
+      },
+      include: { servicio: true },
+    });
+
+    logger.info(
+      {
+        legajo,
+        nombre: nuevoVigilador.nombre,
+        servicio: servicioPunto.servicio.nombre,
+        puntoId,
+      },
+      '🆕 Nuevo vigilador creado y asignado automáticamente al servicio correcto'
+    );
+
+    return {
+      id: nuevoVigilador.id,
+      nombre: nuevoVigilador.nombre,
+      legajo: nuevoVigilador.legajo,
+      ultimoPunto: nuevoVigilador.ultimoPunto,
+      rondaActiva: nuevoVigilador.rondaActiva,
+    };
   }
 
   /**
@@ -94,24 +136,51 @@ export class VigiladorRepository {
    * @param puntoId - ID del punto
    * @param timestamp - Fecha y hora del escaneo
    * @param geo - Geolocalización { lat, long } o null
-   * @param novedades - Texto libre del vigilador
+   * @param novedades - Texto libre del vigilador (normalizado)
+   * @param servicioId - ID del servicio asociado (obligatorio en multi-servicio)
    */
   static async crearRegistro(
     vigiladorId: string,
     puntoId: number,
     timestamp: Date,
     geo: GeoLocation | null,
-    novedades: string
+    novedades: string,
     servicioId: string
   ) {
     await prisma.registro.create({
       data: {
         vigiladorId,
         puntoId,
-        servicioId,
+        servicioId,         // ← Ahora se usa correctamente
         timestamp,
         geolocalizacion: geo ? JSON.stringify(geo) : null,
         novedades: novedades || null,
+      },
+    });
+
+    logger.info(
+      { vigiladorId, puntoId, servicioId, timestamp },
+      '📝 Registro creado exitosamente'
+    );
+  }
+
+  /**
+   * Obtiene el vigilador completo con sus puntos ordenados por ID (secuencia natural)
+   * @param legajo Legajo del vigilador
+   * @returns Vigilador con servicio y lista ordenada de puntos asignados
+   */
+  static async findByLegajoWithPuntos(legajo: number) {
+    return await prisma.vigilador.findUnique({
+      where: { legajo },
+      include: {
+        servicio: {
+          include: {
+            puntos: {
+              include: { punto: true },
+              orderBy: { punto: { id: 'asc' } }, // Secuencia estricta por ID ascendente
+            },
+          },
+        },
       },
     });
   }
