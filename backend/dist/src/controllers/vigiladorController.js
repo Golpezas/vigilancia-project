@@ -1,0 +1,58 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.VigiladorController = void 0;
+const vigiladorService_1 = require("../services/vigiladorService");
+const zod_1 = require("zod");
+const errorHandler_1 = require("../utils/errorHandler");
+const logger_1 = __importDefault(require("../utils/logger")); // Logger Pino centralizado (structured logging 2026)
+// Esquema Zod para validación estricta y normalizada
+const SubmitSchema = zod_1.z.object({
+    nombre: zod_1.z.string().min(1).trim(),
+    legajo: zod_1.z.number().int().positive(),
+    punto: zod_1.z.number().int().min(1).max(10),
+    novedades: zod_1.z.string().optional(),
+    timestamp: zod_1.z.string().datetime({ offset: true }), // ISO con offset normalizado
+    geo: zod_1.z.object({
+        lat: zod_1.z.number().nullable(),
+        long: zod_1.z.number().nullable(),
+    }).optional(),
+});
+class VigiladorController {
+    /**
+     * Maneja el envío de un registro de escaneo.
+     * Valida datos, procesa con el servicio y responde.
+     * Logging estructurado Pino-compliant (objeto primero, mensaje segundo).
+     */
+    static async submit(req, res, next) {
+        // ← Orden correcto Pino: contexto primero, mensaje segundo
+        logger_1.default.info({ body: req.body }, '📥 Nueva request a /api/submit');
+        try {
+            const parseResult = SubmitSchema.safeParse(req.body);
+            if (!parseResult.success) {
+                const firstIssue = parseResult.error.issues[0];
+                const errMsg = `Datos inválidos: ${firstIssue.path.join('.')} - ${firstIssue.message}`;
+                // ← Contexto estructurado primero
+                logger_1.default.warn({ issues: parseResult.error.issues }, '⚠️ Validación fallida');
+                throw new errorHandler_1.ValidationError(errMsg);
+            }
+            const data = parseResult.data;
+            logger_1.default.debug({ data }, '✅ Datos validados');
+            const result = await vigiladorService_1.VigiladorService.procesarEscaneo(data);
+            logger_1.default.info({ result }, '✅ Procesado exitoso');
+            res.json(result);
+        }
+        catch (err) {
+            const errorContext = {
+                message: err.message,
+                stack: err.stack,
+                body: req.body,
+            };
+            logger_1.default.error(errorContext, '❌ Error en submit');
+            next(err);
+        }
+    }
+}
+exports.VigiladorController = VigiladorController;
