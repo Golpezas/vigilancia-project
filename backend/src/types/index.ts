@@ -22,3 +22,9 @@ export interface VigiladorEstado {
   ultimoPunto: number;
   rondaActiva: boolean;
 }
+
+export interface VigiladorEstadoExtendido extends VigiladorEstado {
+  progreso: number;
+  servicioNombre: string;
+  ultimoTimestamp: string | null;
+}

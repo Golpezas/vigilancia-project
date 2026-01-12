@@ -8,8 +8,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VigiladorService = void 0;
+// src/services/vigiladorService.ts
 const vigiladorRepository_1 = require("../repositories/vigiladorRepository");
+// Utilidades de normalización y formateo
 const normalizer_1 = require("../utils/normalizer");
+const dateUtils_1 = require("../utils/dateUtils");
+// Manejo de errores custom (AppError family)
 const errorHandler_1 = require("../utils/errorHandler");
 const logger_1 = __importDefault(require("../utils/logger"));
 class VigiladorService {
@@ -165,6 +169,36 @@ class VigiladorService {
         }
         logger_1.default.info({ legajo, punto, servicio: servicioAsignado.nombre, progreso: `${posicionActual + 1}/${totalPuntos}` }, '✅ Escaneo procesado exitosamente');
         return { success: true, mensaje };
+    }
+    // Agregamos al export class VigiladorService
+    /**
+     * Obtiene el estado normalizado de un vigilador.
+     * Incluye progreso en ronda (porcentaje), último punto, y detalles de servicio.
+     * Logging Pino: contexto detallado para traceability.
+     * @param legajo Legajo único del vigilador
+     * @returns VigiladorEstado extendido con progreso y servicio info
+     * @throws ValidationError si legajo inválido; NotFoundError si no existe
+     */
+    static async getEstado(legajo) {
+        if (!Number.isInteger(legajo) || legajo <= 0) {
+            logger_1.default.warn({ legajo }, '⚠️ Legajo inválido en getEstado');
+            throw new errorHandler_1.ValidationError('Legajo debe ser un entero positivo');
+        }
+        const vigilador = await vigiladorRepository_1.VigiladorRepository.findByLegajoWithPuntos(legajo);
+        if (!vigilador) {
+            logger_1.default.info({ legajo }, '🔍 Vigilador no encontrado en getEstado');
+            throw new errorHandler_1.NotFoundError('Vigilador no encontrado');
+        }
+        const totalPuntos = vigilador.servicio.puntos.length;
+        const progreso = totalPuntos > 0 ? Math.round((vigilador.ultimoPunto / totalPuntos) * 100) : 0;
+        const estadoNormalizado = {
+            ...vigilador,
+            progreso,
+            servicioNombre: vigilador.servicio.nombre,
+            ultimoTimestamp: vigilador.updatedAt ? (0, dateUtils_1.toArgentinaTime)(vigilador.updatedAt) : null, // Normalización timezone
+        };
+        logger_1.default.debug({ legajo, progreso, servicio: vigilador.servicio.nombre }, '✅ Estado calculado exitosamente');
+        return estadoNormalizado;
     }
 }
 exports.VigiladorService = VigiladorService;

@@ -54,5 +54,28 @@ class VigiladorController {
             next(err);
         }
     }
+    static async getEstado(req, res, next) {
+        logger_1.default.info({ legajo: req.params.legajo, ip: req.ip }, '📥 Request a /api/estado/:legajo'); // Contexto + IP para security logs
+        try {
+            const legajo = parseInt(req.params.legajo, 10);
+            if (isNaN(legajo) || legajo <= 0) {
+                logger_1.default.warn({ param: req.params.legajo }, '⚠️ Legajo no numérico o inválido');
+                throw new errorHandler_1.ValidationError('Legajo inválido: debe ser un entero positivo');
+            }
+            const estado = await vigiladorService_1.VigiladorService.getEstado(legajo);
+            logger_1.default.debug({ legajo, progreso: estado.progreso }, '✅ Estado encontrado y normalizado');
+            res.json(estado);
+        }
+        catch (err) {
+            const errorContext = {
+                message: err.message,
+                stack: err.stack,
+                params: req.params,
+                ip: req.ip, // Extra context para forensic
+            };
+            logger_1.default.error(errorContext, '❌ Error en getEstado');
+            next(err);
+        }
+    }
 }
 exports.VigiladorController = VigiladorController;
