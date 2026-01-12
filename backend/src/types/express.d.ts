@@ -1,16 +1,10 @@
-// backend/src/types/express.d.ts
-// Augmentación oficial de Express para req.user
-// Compatible con el TokenPayload real que usamos en authService
+// src/types/express.d.ts  ← asegúrate que el path sea correcto
 
-import { TokenPayload } from '../services/authService'; // Importamos el tipo exacto
+import { TokenPayload } from '../services/authService'; // o tu tipo real
 
 declare module 'express-serve-static-core' {
   interface Request {
-    /**
-     * Usuario autenticado vía JWT (disponible después del middleware)
-     * Tipado estricto según el payload que firmamos
-     */
-    user?: TokenPayload;
+    user?: TokenPayload;  // o tu interfaz exacta { id: string; email: string; role: 'ADMIN' | 'CLIENT' }
   }
 }
 
