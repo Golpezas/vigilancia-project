@@ -21,6 +21,8 @@ import {
 
 import logger from '../utils/logger';
 
+import type { VigiladorEstadoExtendido } from '../types/index';
+
 export class VigiladorService {
   /**
    * Procesa el escaneo de un punto QR.
@@ -215,6 +217,50 @@ export class VigiladorService {
     return { success: true, mensaje };
   }
 
+  /**
+   * Lista vigiladores por servicio ID, con progreso normalizado.
+   * @param servicioId UUID del servicio
+   * @returns Array de estados extendidos
+   */
+  // En vigiladorService.ts (agrega al final de la clase)
+static async getVigiladoresPorServicio(servicioNombre: string): Promise<Array<VigiladorEstadoExtendido>> {
+  if (!servicioNombre.trim()) {
+    logger.warn({ servicioNombre }, '⚠️ Nombre de servicio inválido');
+    throw new ValidationError('Nombre de servicio requerido');
+  }
+
+  const servicio = await prisma.servicio.findUnique({
+    where: { nombre: servicioNombre },
+    include: {
+      vigiladores: {
+        include: {
+          servicio: { include: { puntos: true } }, // Para calcular totalPuntos
+        },
+      },
+    },
+  });
+
+  if (!servicio) {
+    logger.info({ servicioNombre }, '🔍 Servicio no encontrado');
+    throw new NotFoundError('Servicio no encontrado');
+  }
+
+  const vigiladoresExtendidos = servicio.vigiladores.map((vigilador) => {
+    const totalPuntos = vigilador.servicio.puntos.length;
+    const progreso = totalPuntos > 0 ? Math.round((vigilador.ultimoPunto / totalPuntos) * 100) : 0;
+
+    return {
+      ...vigilador,
+      progreso,
+      servicioNombre: vigilador.servicio.nombre,
+      ultimoTimestamp: vigilador.updatedAt ? toArgentinaTime(vigilador.updatedAt) : null,
+    };
+  });
+
+  logger.info({ servicioNombre, count: vigiladoresExtendidos.length }, '✅ Vigiladores por servicio obtenidos');
+  return vigiladoresExtendidos;
+}
+
   // Agregamos al export class VigiladorService
   /**
    * Obtiene el estado normalizado de un vigilador.
@@ -224,7 +270,7 @@ export class VigiladorService {
    * @returns VigiladorEstado extendido con progreso y servicio info
    * @throws ValidationError si legajo inválido; NotFoundError si no existe
    */
-  static async getEstado(legajo: number): Promise<VigiladorEstado & { progreso: number; servicioNombre: string }> {
+  static async getEstado(legajo: number): Promise<VigiladorEstadoExtendido> {
     if (!Number.isInteger(legajo) || legajo <= 0) {
       logger.warn({ legajo }, '⚠️ Legajo inválido en getEstado');
       throw new ValidationError('Legajo debe ser un entero positivo');

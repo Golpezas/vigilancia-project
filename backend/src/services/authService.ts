@@ -1,0 +1,136 @@
+// backend/src/services/authService.ts
+import { prisma } from '../repositories/vigiladorRepository';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { z } from 'zod';
+import logger from '../utils/logger';
+import { ValidationError, ForbiddenError } from '../utils/errorHandler';
+
+// Validación estricta del secret (fail-fast)
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET.length < 48) {
+  logger.error({}, 'JWT_SECRET no configurado o demasiado débil (mínimo 48 caracteres)');
+  throw new Error('Error crítico de configuración: JWT_SECRET inválido o ausente');
+}
+
+const SALT_ROUNDS = 12;
+
+// Esquemas Zod para entrada segura
+const RegisterSchema = z.object({
+  email: z.string().email('Email inválido').min(5),
+  password: z.string().min(8, 'Mínimo 8 caracteres'),
+  role: z.enum(['ADMIN', 'CLIENT']).optional().default('CLIENT'),
+});
+
+const LoginSchema = z.object({
+  email: z.string().email('Email inválido'),
+  password: z.string().min(1, 'Contraseña requerida'),
+});
+
+// Tipo del payload del JWT – usado en sign, verify y req.user
+export interface TokenPayload {
+  id: string;
+  email: string;
+  role: 'ADMIN' | 'CLIENT';
+}
+
+/**
+ * Registro de usuario (admin o cliente)
+ */
+export async function registerUser(rawData: unknown) {
+  const data = RegisterSchema.parse(rawData);
+
+  const existing = await prisma.user.findUnique({ where: { email: data.email } });
+  if (existing) throw new ValidationError('Email ya registrado');
+
+  const hashed = await bcrypt.hash(data.password, SALT_ROUNDS);
+
+  const user = await prisma.user.create({
+    data: {
+      email: data.email,
+      password: hashed,
+      role: data.role,
+    },
+    select: { id: true, email: true, role: true },
+  });
+
+  logger.info({ userId: user.id, email: user.email, role: user.role }, 'Usuario registrado exitosamente');
+
+  return { id: user.id, email: user.email, role: user.role };
+}
+
+/**
+ * Login + generación de JWT
+ */
+export async function loginUser(rawData: unknown) {
+  const { email, password } = LoginSchema.parse(rawData);
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, password: true, role: true },
+  });
+
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    throw new ValidationError('Credenciales inválidas');
+  }
+
+  const payload: TokenPayload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const token = jwt.sign(payload, JWT_SECRET!, {
+    expiresIn: '8h',
+    algorithm: 'HS256',
+  });
+
+  logger.info({ userId: user.id, role: user.role }, 'Login exitoso');
+
+  return {
+    token,
+    user: { id: user.id, email: user.email, role: user.role },
+  };
+}
+
+/**
+ * Middleware JWT + verificación de roles
+ */
+export const authMiddleware = (allowedRoles: Array<'ADMIN' | 'CLIENT'> = ['ADMIN']) => {
+  return (req: any, res: any, next: any) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token requerido (formato: Bearer <token>)' });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+
+      // Type guard robusto + casting seguro
+      if (!decoded || typeof decoded === 'string' || !('id' in decoded) || !('email' in decoded) || !('role' in decoded)) {
+        throw new ForbiddenError('Token malformado o payload incompleto');
+      }
+
+      const payload = decoded as TokenPayload;
+
+      if (!allowedRoles.includes(payload.role)) {
+        logger.warn({ attemptedRole: payload.role, userId: payload.id }, 'Rol no autorizado');
+        throw new ForbiddenError('Acceso denegado - rol insuficiente');
+      }
+
+      req.user = payload; // Ahora TypeScript lo acepta correctamente gracias a la augmentación
+      next();
+    } catch (err: any) {
+      const message =
+        err.name === 'TokenExpiredError' ? 'Token expirado' :
+        err.name === 'JsonWebTokenError' ? 'Token inválido' :
+        'Error de autenticación';
+
+      logger.warn({ error: err.message, tokenPrefix: token?.slice(0, 10) || 'none' }, message);
+      return res.status(401).json({ error: message });
+    }
+  };
+};

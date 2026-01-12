@@ -82,3 +82,19 @@ model Registro {
   @@index([servicioId])  // ← NUEVO: para filtros por cliente
   @@map("registro")
 }
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hashed con bcrypt
+  role      Role     @default(ADMIN)  // Enum para roles
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user")
+}
+
+enum Role {
+  ADMIN
+  CLIENT
+}

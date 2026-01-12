@@ -6,6 +6,7 @@ import vigiladorRoutes from './routes/vigiladorRoutes';
 import { AppError } from './utils/errorHandler';
 import logger from './utils/logger'; // Logger centralizado Pino
 import adminRoutes from './routes/adminRoutes';
+import authRoutes from './routes/authRoutes';
 
 const app = express();
 
@@ -22,6 +23,8 @@ app.use(express.json({ limit: '10mb' }));
 
 // Rutas desacopladas
 app.use('/api', vigiladorRoutes);
+
+app.use('/api/auth', authRoutes);
 
 app.use('/api/admin', adminRoutes); // ← Nueva ruta protegida
 

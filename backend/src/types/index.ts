@@ -28,3 +28,4 @@ export interface VigiladorEstadoExtendido extends VigiladorEstado {
   servicioNombre: string;
   ultimoTimestamp: string | null;
 }
+

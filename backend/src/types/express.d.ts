@@ -1,19 +1,17 @@
-// src/types/express.d.ts
-// Augmentación de tipos Express - Mejores prácticas 2026: Declaration merging para propiedades custom en Request
-// Type-safety total, reusable en toda la app
+// backend/src/types/express.d.ts
+// Augmentación oficial de Express para req.user
+// Compatible con el TokenPayload real que usamos en authService
 
-import { JwtPayload } from 'jsonwebtoken'; // Opcional: para tipar mejor el payload
+import { TokenPayload } from '../services/authService'; // Importamos el tipo exacto
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        servicioId: string;
-        userId: string;
-        // Agrega más campos del JWT si lo expandís (e.g., role: string)
-      };
-    }
+declare module 'express-serve-static-core' {
+  interface Request {
+    /**
+     * Usuario autenticado vía JWT (disponible después del middleware)
+     * Tipado estricto según el payload que firmamos
+     */
+    user?: TokenPayload;
   }
 }
 
-export {}; // Asegura que sea un módulo (importante para TS)
+export {};

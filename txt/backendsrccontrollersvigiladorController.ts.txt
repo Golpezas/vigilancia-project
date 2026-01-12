@@ -58,36 +58,29 @@ export class VigiladorController {
     }
   }
 
-  /**
-   * Obtiene el estado actual de un vigilador por legajo.
-   * Logging Pino-compliant en todas las ramas.
-   */
-  /* static async getEstado(req: Request, res: Response, next: NextFunction) {
-    logger.info({ legajo: req.params.legajo }, '📥 Request a /api/estado/:legajo');
+  static async getEstado(req: Request, res: Response, next: NextFunction) {
+    logger.info({ legajo: req.params.legajo, ip: req.ip }, '📥 Request a /api/estado/:legajo'); // Contexto + IP para security logs
 
     try {
       const legajo = parseInt(req.params.legajo, 10);
-      if (isNaN(legajo)) {
-        logger.warn({ param: req.params.legajo }, '⚠️ Legajo no numérico');
-        throw new ValidationError('Legajo inválido');
+      if (isNaN(legajo) || legajo <= 0) {
+        logger.warn({ param: req.params.legajo }, '⚠️ Legajo no numérico o inválido');
+        throw new ValidationError('Legajo inválido: debe ser un entero positivo');
       }
 
       const estado = await VigiladorService.getEstado(legajo);
-      if (!estado) {
-        logger.info({ legajo }, '🔍 Vigilador no encontrado');
-        return res.status(404).json({ error: 'Vigilador no encontrado' });
-      }
+      logger.debug({ legajo, progreso: estado.progreso }, '✅ Estado encontrado y normalizado');
 
-      logger.debug({ legajo, ultimoPunto: estado.ultimoPunto }, '✅ Estado encontrado');
       res.json(estado);
     } catch (err: unknown) {
       const errorContext = {
         message: (err as Error).message,
         stack: (err as Error).stack,
         params: req.params,
+        ip: req.ip, // Extra context para forensic
       };
       logger.error(errorContext, '❌ Error en getEstado');
       next(err);
     }
-  }*/
+  }
 } 
