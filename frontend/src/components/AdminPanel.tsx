@@ -21,144 +21,115 @@ interface ServicioCreadoResponse {
   };
 }
 
-const ADMIN_KEY = 'G4mul0t3@2106'; // ← Cambiar por env segura
+interface AdminPanelProps {
+  token: string | null; // Requerido para auth en API calls
+  onLogout: () => void; // Ahora usado en UI
+}
 
-export const AdminPanel: React.FC = () => {
+//const ADMIN_KEY = 'G4mul0t3@2106'; // ← Cambiar por env segura
+
+export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout }) => {
   const [nombre, setNombre] = useState<string>('');
   const [puntosSeleccionados, setPuntosSeleccionados] = useState<number[]>([]);
   const [puntosDisponibles, setPuntosDisponibles] = useState<PuntoDisponible[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [mensaje, setMensaje] = useState<string>('');
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const puntosHardcoded: PuntoDisponible[] = [
-      { id: 1, nombre: 'Entrada Principal' },
-      { id: 2, nombre: 'Sector Producción' },
-      { id: 3, nombre: 'Depósito' },
-      { id: 4, nombre: 'Salida Emergencia' },
-      { id: 5, nombre: 'Oficinas' },
-      { id: 6, nombre: 'Patio Trasero' },
-      { id: 7, nombre: 'Sector Logística' },
-      { id: 8, nombre: 'Sala de Servidores' },
-    ];
-
-    const loadPuntos = async () => {
+    const fetchPuntos = async () => {
       try {
-        // Futuro: const response = await api.get('/admin/puntos');
-        setPuntosDisponibles(puntosHardcoded);
-      } catch (err) {
-        setMensaje('Error cargando puntos disponibles');
-        console.error('Error en loadPuntos:', err);
+        const res = await api.get('/api/puntos', {
+          headers: { Authorization: `Bearer ${token}` }, // Usa token para auth protegida
+        });
+        setPuntosDisponibles(res.data);
+      } catch (err: unknown) {
+        const msg = isAxiosError(err) ? err.response?.data.error : 'Error al cargar puntos';
+        setError(msg);
       } finally {
         setLoading(false);
       }
     };
+    fetchPuntos();
+  }, [token]); // Dependencia en token (re-fetch si cambia)
 
-    loadPuntos();
-  }, []);
-
-  const handleCheckboxChange = (id: number) => {
-    setPuntosSeleccionados(prev => 
-      prev.includes(id)
-        ? prev.filter(pId => pId !== id)
-        : [...prev, id]
-    );
-  };
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMensaje('');
     setLoading(true);
-
-    if (puntosSeleccionados.length === 0) {
-      setMensaje('Debe seleccionar al menos un punto');
-      setLoading(false);
-      return;
-    }
+    setError(null);
+    setMensaje(null);
 
     try {
-      const response = await api.post<ServicioCreadoResponse>('/admin/servicio', {
-        nombre: nombre.trim(),
-        puntoIds: puntosSeleccionados,
+      const res = await api.post<ServicioCreadoResponse>('/api/admin/servicios', {
+        nombre,
+        puntos: puntosSeleccionados,
       }, {
-        headers: { 'x-admin-key': ADMIN_KEY },
+        headers: { Authorization: `Bearer ${token}` }, // Auth en POST
       });
-
-      if (response.data.success) {
-        setMensaje(`Servicio "${response.data.servicio.nombre}" creado exitosamente`);
-        setNombre('');
-        setPuntosSeleccionados([]);
-      }
-    } catch (err: unknown) { // ← unknown en lugar de any (type-safe)
-      let errorMsg = 'Error desconocido al crear servicio';
-
-      if (isAxiosError(err)) {
-        // Error de Axios (network o response)
-        if (err.response) {
-          // Server respondió con error (400, 401, 500, etc.)
-          errorMsg = err.response.data?.error || `Error ${err.response.status}`;
-        } else if (err.request) {
-          // No hubo respuesta
-          errorMsg = 'No se pudo conectar al servidor';
-        } else {
-          // Error en setup
-          errorMsg = err.message;
-        }
-      } else {
-        // Error no-Axios (ej: JSON parse)
-        errorMsg = err instanceof Error ? err.message : String(err);
-      }
-
-      setMensaje(`Error: ${errorMsg}`);
-      console.error('Error creando servicio:', err);
+      setMensaje(`Servicio "${res.data.servicio.nombre}" creado exitosamente`);
+      setNombre('');
+      setPuntosSeleccionados([]);
+    } catch (err: unknown) {
+      const msg = isAxiosError(err) ? err.response?.data.error : 'Error al crear servicio';
+      setError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading && puntosDisponibles.length === 0) {
-    return <div className="text-center mt-8 text-white">Cargando panel administrativo...</div>;
-  }
+  const handleCheckbox = (id: number) => {
+    setPuntosSeleccionados((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  };
 
   return (
-    <div className="max-w-2xl mx-auto mt-8 p-6 bg-gray-800 rounded-lg shadow-lg">
-      <h2 className="text-2xl font-bold text-white mb-6 text-center">
-        Panel Administrativo - Crear Servicio
-      </h2>
+    <div className="max-w-md mx-auto mt-10 p-6 bg-gray-800 rounded-lg shadow-lg">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-white">Panel Admin - Crear Servicio</h2>
+        <button
+          onClick={onLogout} // ← Aquí se usa onLogout: fixes el error de unused-var
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition"
+        >
+          Cerrar Sesión
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-800 text-red-200 rounded">
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Nombre del Servicio/Cliente
+            Nombre del Servicio
           </label>
           <input
             type="text"
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
-            className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+            placeholder="Ej: Cliente Norte"
             required
-            minLength={3}
-            placeholder="Ej: Edificio Norte"
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Puntos asignados al servicio
+            Seleccione Puntos (mínimo 1)
           </label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto bg-gray-700 p-4 rounded-lg">
+          <div className="space-y-3 max-h-48 overflow-y-auto bg-gray-700 p-4 rounded-lg">
             {puntosDisponibles.map((punto) => (
-              <label
-                key={punto.id}
-                className="flex items-center space-x-3 text-gray-200 hover:bg-gray-600 p-2 rounded cursor-pointer"
-              >
+              <label key={punto.id} className="flex items-center space-x-3">
                 <input
                   type="checkbox"
                   checked={puntosSeleccionados.includes(punto.id)}
-                  onChange={() => handleCheckboxChange(punto.id)}
+                  onChange={() => handleCheckbox(punto.id)}
                   className="w-5 h-5 text-blue-600 bg-gray-800 border-gray-600 rounded focus:ring-blue-500"
                 />
-                <span className="text-sm">
+                <span className="text-sm text-white">
                   {punto.id} - {punto.nombre}
                 </span>
               </label>

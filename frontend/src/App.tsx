@@ -2,13 +2,15 @@
 import { useState } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
-import { AdminPanel } from './components/AdminPanel'; // ← Importar aquí
+import { AdminPanel } from './components/AdminPanel';
+import { AdminLogin } from './components/AdminLogin'; // Importar si vas a usar login persistente
 
 function App() {
   const [punto, setPunto] = useState<number | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false); // ← Estado para toggle admin (temporal)
+  const [isAdminMode, setIsAdminMode] = useState(false); // Renombrado para claridad (evita confusión con auth)
+  const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken') || null); // Persistencia básica
 
   const handleScan = (punto: number) => {
     setPunto(punto);
@@ -32,18 +34,36 @@ function App() {
     setTimeout(() => setError(null), 5000);
   };
 
-  // Toggle temporal para admin (en prod, usa auth/routing)
-  const toggleAdmin = () => setIsAdmin(!isAdmin);
+  const handleAdminLogin = (newToken: string) => {
+    localStorage.setItem('adminToken', newToken);
+    setToken(newToken);
+    setIsAdminMode(true);
+  };
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem('adminToken');
+    setToken(null);
+    setIsAdminMode(false);
+  };
+
+  // Toggle temporal para dev - En prod, usa routing/auth guards (e.g., React Router + JWT validation)
+  const toggleAdmin = () => {
+    if (isAdminMode) {
+      handleAdminLogout();
+    } else {
+      setIsAdminMode(true);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-blue-800 text-white p-6 text-center">
         <h1 className="text-2xl font-bold">Control de Rondas - Vigilancia</h1>
-        <button 
+        <button
           onClick={toggleAdmin}
           className="mt-2 px-4 py-1 bg-white text-blue-800 rounded font-medium"
         >
-          {isAdmin ? 'Volver a Vigilador' : 'Modo Admin'}
+          {isAdminMode ? 'Volver a Vigilador' : 'Modo Admin'}
         </button>
       </header>
 
@@ -60,8 +80,12 @@ function App() {
           </div>
         )}
 
-        {isAdmin ? (
-          <AdminPanel /> // ← Renderiza aquí
+        {isAdminMode ? (
+          token ? (
+            <AdminPanel token={token} onLogout={handleAdminLogout} />
+          ) : (
+            <AdminLogin onSuccess={handleAdminLogin} onError={handleError} />
+          )
         ) : !punto ? (
           <QRScanner onScan={handleScan} onError={handleError} />
         ) : (

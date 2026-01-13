@@ -77,11 +77,10 @@ export const AdminPanel: React.FC = () => {
     }
 
     try {
-      const response = await api.post<ServicioCreadoResponse>('/admin/servicio', {
-        nombre: nombre.trim(),
-        puntoIds: puntosSeleccionados,
-      }, {
-        headers: { 'x-admin-key': ADMIN_KEY },
+      const response = await api.post('/admin/crear-servicio', payload, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('adminToken')}`
+        }
       });
 
       if (response.data.success) {

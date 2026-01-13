@@ -12,20 +12,11 @@ const api = axios.create({
   },
 });
 
-// Interceptor útil para dev
 api.interceptors.response.use(
-  (response) => {
-    console.log('🔗 Respuesta API:', { url: response.config.url, status: response.status });
-    return response;
-  },
-  (error) => {
-    console.error('🚨 Error API:', {
-      url: error.config?.url,
-      message: error.message,
-      code: error.code,
-      response: error.response?.data,
-    });
-    return Promise.reject(error);
+  res => res,
+  err => {
+    console.error('🚨 API Error:', { url: err.config?.url, message: err.message, response: err.response?.data });
+    return Promise.reject(err.response?.data?.error || 'Error de conexión - verifique red o auth');
   }
 );
 

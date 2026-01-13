@@ -3,12 +3,27 @@ import { useState } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
 import { AdminPanel } from './components/AdminPanel'; // ← Importar aquí
+import { AdminLogin } from './components/AdminLogin';
 
 function App() {
   const [punto, setPunto] = useState<number | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false); // ← Estado para toggle admin (temporal)
+  const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
+  const [isAdminMode, setIsAdminMode] = useState(false); // Renombra para claridad
+
+  const handleAdminLogin = (newToken: string) => {
+    localStorage.setItem('adminToken', newToken);
+    setToken(newToken);
+    setIsAdminMode(true);
+  };
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem('adminToken');
+    setToken(null);
+    setIsAdminMode(false);
+  };
 
   const handleScan = (punto: number) => {
     setPunto(punto);
@@ -61,7 +76,13 @@ function App() {
         )}
 
         {isAdmin ? (
-          <AdminPanel /> // ← Renderiza aquí
+          {isAdminMode ? (
+            <AdminPanel token={token} onLogout={handleAdminLogout} />
+          ) : token ? (
+            <div>Ya logueado como admin, toggle para panel</div> // O directo a panel
+          ) : (
+            <AdminLogin onSuccess={handleAdminLogin} onError={handleError} />
+          )} // ← Renderiza aquí
         ) : !punto ? (
           <QRScanner onScan={handleScan} onError={handleError} />
         ) : (
