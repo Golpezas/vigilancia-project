@@ -1,18 +1,43 @@
 // src/routes/adminRoutes.ts
 // Rutas administrativas protegidas con JWT + rol ADMIN (2026 best practices)
 
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { prisma } from '../repositories/vigiladorRepository';
 import { z } from 'zod';
 import logger from '../utils/logger';
 import { ValidationError } from '../utils/errorHandler';
-import { Prisma } from '@prisma/client';
-import { authMiddleware } from '../services/authService';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { requireAuth } from '../middlewares/authMiddleware';
 
 const router = Router();
 
+interface AuthenticatedUser {
+  email?: string;
+}
+
+interface AuthenticatedRequest extends Request {
+  user?: AuthenticatedUser;
+}
+
+interface VigiladorResponse {
+  legajo: number;
+  servicio: string;
+}
+
+interface ApiResponse<T = unknown> {
+  success?: boolean;
+  mensaje?: string;
+  error?: string;
+  details?: unknown;
+  vigilador?: T;
+  vigiladores?: T[];
+  total?: number;
+  requestedBy?: string;
+  servicio?: T;
+}
+
 // Protección: solo usuarios con rol ADMIN
-const requireAdmin = authMiddleware(['ADMIN']);
+const requireAdmin = requireAuth(['ADMIN']);
 
 // ── Asignar servicio a vigilador ──────────────────────────────────────────────
 const AsignarServicioSchema = z.object({
@@ -69,7 +94,7 @@ router.post('/vigilador/asignar-servicio', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: err.message });
     }
 
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+    if (err instanceof PrismaClientKnownRequestError && err.code === 'P2025') {
       return res.status(404).json({ error: 'Vigilador o servicio no encontrado' });
     }
 
@@ -115,7 +140,7 @@ router.post('/servicio', requireAdmin, async (req, res) => {
   try {
     const { nombre, puntoIds } = CreateServicioSchema.parse(req.body);
 
-    const servicio = await prisma.$transaction(async (tx) => {
+    const servicio = await prisma.$transaction(async (tx: typeof prisma) => {
       const nuevoServicio = await tx.servicio.upsert({
         where: { nombre: nombre.trim() },
         update: {},

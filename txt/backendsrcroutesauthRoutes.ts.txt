@@ -12,10 +12,10 @@ const AuthSchema = z.object({
 
 router.post('/register', async (req, res) => {
   try {
-    const user = await registerUser(req.body);
-    res.status(201).json(user);
+    const result = await registerUser(req.body);
+    res.status(201).json(result);
   } catch (err: any) {
-    res.status(err.statusCode || 400).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -24,7 +24,7 @@ router.post('/login', async (req, res) => {
     const result = await loginUser(req.body);
     res.json(result);
   } catch (err: any) {
-    res.status(err.statusCode || 401).json({ error: err.message });
+    res.status(401).json({ error: err.message });
   }
 });
 

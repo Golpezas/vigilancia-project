@@ -5,7 +5,6 @@ export interface GeoLocation {
   lat: number | null;
   long: number | null;
 }
-
 export interface SubmitRegistroData {
   nombre: string;
   legajo: number;
@@ -29,3 +28,11 @@ export interface VigiladorEstadoExtendido extends VigiladorEstado {
   ultimoTimestamp: string | null;
 }
 
+export interface TokenPayload {
+  id: string;
+  email: string;
+  role: 'ADMIN' | 'CLIENT';     // ← Enum string literal (mejor que enum real en JWT)
+  servicioId?: string;          // ← Opcional, solo para CLIENT
+}
+
+export type Role = 'ADMIN' | 'CLIENT';

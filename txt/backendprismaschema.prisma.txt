@@ -11,28 +11,29 @@ datasource db {
 }
 
 model Servicio {
-  id        String          @id @default(uuid())
-  nombre    String          @unique
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id          String          @id @default(uuid())
+  nombre      String          @unique
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   vigiladores Vigilador[]
-  puntos    ServicioPunto[]
-  registros Registro[]      // ← NUEVO: relación opuesta obligatoria para Prisma
-  
+  puntos      ServicioPunto[]
+  registros   Registro[] // ← NUEVO: relación opuesta obligatoria para Prisma
+  User        User[]
+
   @@map("servicio")
 }
 
 model Vigilador {
-  id           String    @id @default(uuid())
-  nombre       String
-  legajo       Int       @unique
-  ultimoPunto  Int       @default(0)
-  rondaActiva  Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id          String   @id @default(uuid())
+  nombre      String
+  legajo      Int      @unique
+  ultimoPunto Int      @default(0)
+  rondaActiva Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  servicioId   String
-  servicio     Servicio  @relation(fields: [servicioId], references: [id])
+  servicioId String
+  servicio   Servicio @relation(fields: [servicioId], references: [id])
 
   registros    Registro[]
 
@@ -83,13 +84,18 @@ model Registro {
   @@map("registro")
 }
 
+// prisma/schema.prisma
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String   // Hashed con bcrypt
-  role      Role     @default(ADMIN)  // Enum para roles
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String    @id @default(uuid())
+  email      String    @unique
+  password   String
+  role       Role      @default(CLIENT)
+
+  servicioId String?           // FK opcional
+  servicio   Servicio? @relation("UserServicio", fields: [servicioId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@map("user")
 }

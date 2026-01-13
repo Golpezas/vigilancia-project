@@ -7,6 +7,7 @@
 
 import { VigiladorRepository, prisma } from '../repositories/vigiladorRepository';
 import type { SubmitRegistroData, VigiladorEstado } from '../types/index';
+import type { Prisma } from '.prisma/client';
 
 // Utilidades de normalización y formateo
 import { normalizeGeo, normalizeNovedades } from '../utils/normalizer';
@@ -84,14 +85,16 @@ export class VigiladorService {
       }
 
       if (serviciosConPunto.length > 1) {
-        const nombres = serviciosConPunto.map(s => s.nombre).join(', ');
+        const nombres = serviciosConPunto.map((s: { nombre: string }) => s.nombre).join(', ');
         logger.warn({ legajo, punto, servicios: nombres }, 'Punto compartido entre múltiples servicios');
         throw new ForbiddenError(`Este punto pertenece a varios clientes: ${nombres}. Contacta al administrador.`);
       }
 
       // ✅ Asignar el único servicio encontrado
       servicioAsignado = serviciosConPunto[0];
-      puntosDelServicio = servicioAsignado.puntos.map(sp => sp.punto);
+      puntosDelServicio = servicioAsignado.puntos.map(
+        (sp: { punto: { id: number; nombre: string } }) => sp.punto
+      );
 
       // Actualizar vigilador con servicio (en transacción)
       await prisma.$transaction([
@@ -115,7 +118,9 @@ export class VigiladorService {
       }
 
       servicioAsignado = vigiladorCompleto.servicio;
-      puntosDelServicio = servicioAsignado.puntos.map(sp => sp.punto);
+      puntosDelServicio = servicioAsignado.puntos.map(
+        (sp: { punto: { id: number; nombre: string } }) => sp.punto
+      );
 
       // Validar que el punto pertenezca al servicio actual
       const puntoValido = puntosDelServicio.find(p => p.id === punto);
@@ -159,7 +164,7 @@ export class VigiladorService {
 
         // 7. Persistencia en transacción interactiva (best practice Prisma v5+ 2026)
     // Usamos callback para atomicidad total y type-safety perfecta
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Crear el registro directamente con tx (evitamos wrapper que devuelve Promise<void>)
       await tx.registro.create({
         data: {
@@ -245,7 +250,7 @@ static async getVigiladoresPorServicio(servicioNombre: string): Promise<Array<Vi
     throw new NotFoundError('Servicio no encontrado');
   }
 
-  const vigiladoresExtendidos = servicio.vigiladores.map((vigilador) => {
+  const vigiladoresExtendidos = servicio.vigiladores.map((vigilador: typeof servicio.vigiladores[0]) => {
     const totalPuntos = vigilador.servicio.puntos.length;
     const progreso = totalPuntos > 0 ? Math.round((vigilador.ultimoPunto / totalPuntos) * 100) : 0;
 

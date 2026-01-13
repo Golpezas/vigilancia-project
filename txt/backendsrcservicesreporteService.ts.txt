@@ -48,12 +48,18 @@ export class ReporteService {
 
     // Agregación: Agrupar por vigilador y detectar rondas (lógica secuencial)
     const rondasPorVigilador: Record<string, any[]> = {};
-    registros.forEach(reg => {
+    registros.forEach((reg: {
+      vigiladorId: string;
+      punto: { nombre: string };
+      timestamp: Date;
+      geolocalizacion: string | null;
+      novedades: string | null;
+    }) => {
       const key = reg.vigiladorId;
       if (!rondasPorVigilador[key]) rondasPorVigilador[key] = [];
       rondasPorVigilador[key].push({
         punto: reg.punto.nombre,
-        timestamp: toArgentinaTime(reg.timestamp), // Normalizado
+        timestamp: toArgentinaTime(reg.timestamp),
         geo: reg.geolocalizacion ? JSON.parse(reg.geolocalizacion) : null,
         novedades: reg.novedades,
       });
