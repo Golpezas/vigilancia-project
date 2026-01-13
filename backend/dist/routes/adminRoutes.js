@@ -1,9 +1,4 @@
 "use strict";
-// src/routes/adminRoutes.ts
-// Rutas administrativas protegidas con JWT + rol ADMIN
-// Mejores prácticas 2026: Tipado estricto, transacciones atómicas, logging estructurado, validación Zod runtime
-// Normalización: Trim en nombres, validación UUID en IDs futuros
-// Seguridad: Role-based access, manejo idempotente con upsert
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -13,26 +8,19 @@ const vigiladorRepository_1 = require("../repositories/vigiladorRepository");
 const zod_1 = require("zod");
 const logger_1 = __importDefault(require("../utils/logger"));
 const errorHandler_1 = require("../utils/errorHandler");
-const library_1 = require("@prisma/client/runtime/library"); // Para errores específicos
+const library_1 = require("@prisma/client/runtime/library");
 const authMiddleware_1 = require("../middlewares/authMiddleware");
 const router = (0, express_1.Router)();
-// Protección: solo usuarios con rol ADMIN
 const requireAdmin = (0, authMiddleware_1.requireAuth)(['ADMIN']);
-// ── Asignar servicio a vigilador ──────────────────────────────────────────────
 const AsignarServicioSchema = zod_1.z.object({
     legajo: zod_1.z.number().int().positive('Legajo debe ser positivo'),
     servicioNombre: zod_1.z.string().min(3, 'Nombre del servicio muy corto').max(100),
 });
-/**
- * Asigna un servicio a un vigilador por legajo.
- * @route POST /vigilador/asignar-servicio
- * @access Admin only
- */
 router.post('/vigilador/asignar-servicio', requireAdmin, async (req, res) => {
     try {
         const { legajo, servicioNombre } = AsignarServicioSchema.parse(req.body);
         const servicio = await vigiladorRepository_1.prisma.servicio.findUnique({
-            where: { nombre: servicioNombre.trim() }, // Normalización: trim para consistencia
+            where: { nombre: servicioNombre.trim() },
         });
         if (!servicio) {
             throw new errorHandler_1.ValidationError(`Servicio "${servicioNombre}" no existe`);
@@ -77,12 +65,6 @@ router.post('/vigilador/asignar-servicio', requireAdmin, async (req, res) => {
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
-// ── Listado de vigiladores ────────────────────────────────────────────────────
-/**
- * Lista todos los vigiladores con info básica.
- * @route GET /vigiladores
- * @access Admin only
- */
 router.get('/vigiladores', requireAdmin, async (req, res) => {
     try {
         const vigiladores = await vigiladorRepository_1.prisma.vigilador.findMany({
@@ -108,23 +90,16 @@ router.get('/vigiladores', requireAdmin, async (req, res) => {
         res.status(500).json({ error: 'Error interno' });
     }
 });
-// ── Crear/actualizar servicio con puntos ──────────────────────────────────────
 const CreateServicioSchema = zod_1.z.object({
     nombre: zod_1.z.string().min(3).max(100),
     puntoIds: zod_1.z.array(zod_1.z.number().int().positive()).min(1, 'Debe seleccionar al menos un punto'),
 });
-/**
- * Crea o actualiza un servicio con puntos asignados (idempotente).
- * @route POST /servicio
- * @access Admin only
- */
 router.post('/servicio', requireAdmin, async (req, res) => {
     try {
         const { nombre, puntoIds } = CreateServicioSchema.parse(req.body);
-        // Transacción atómica con tipado correcto (resuelve TS2769 y TS2339)
         const servicio = await vigiladorRepository_1.prisma.$transaction(async (tx) => {
             const nuevoServicio = await tx.servicio.upsert({
-                where: { nombre: nombre.trim() }, // Normalización: trim para evitar duplicados sucios
+                where: { nombre: nombre.trim() },
                 update: {},
                 create: { nombre: nombre.trim() },
             });

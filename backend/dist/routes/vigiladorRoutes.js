@@ -1,8 +1,7 @@
 "use strict";
-// src/routes/vigiladorRoutes.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const vigiladorController_1 = require("../controllers/vigiladorController"); // ← .js
+const vigiladorController_1 = require("../controllers/vigiladorController");
 const authMiddleware_1 = require("../middlewares/authMiddleware");
 const router = (0, express_1.Router)();
 router.post('/submit', vigiladorController_1.VigiladorController.submit);

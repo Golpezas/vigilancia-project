@@ -1,7 +1,4 @@
 "use strict";
-// src/services/reporteService.ts
-// Servicio para reportes multi-cliente - Agregaciones dinámicas, validación tiempos
-// Mejores prácticas 2026: Prisma raw queries para perf, caching con Redis (opcional), JSDoc completa
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -10,9 +7,8 @@ exports.ReporteService = void 0;
 const vigiladorRepository_1 = require("../repositories/vigiladorRepository");
 const zod_1 = require("zod");
 const logger_1 = __importDefault(require("../utils/logger"));
-const dateUtils_1 = require("../utils/dateUtils"); // Normalización zona
+const dateUtils_1 = require("../utils/dateUtils");
 const errorHandler_1 = require("../utils/errorHandler");
-// Schema Zod para filtros de reportes (validación estricta)
 const ReporteFiltroSchema = zod_1.z.object({
     servicioId: zod_1.z.string().uuid(),
     fechaDesde: zod_1.z.string().datetime().optional(),
@@ -20,14 +16,8 @@ const ReporteFiltroSchema = zod_1.z.object({
     vigiladorId: zod_1.z.string().uuid().optional(),
 });
 class ReporteService {
-    /**
-     * Obtiene reportes de rondas por servicio, con detección de incumplimientos.
-     * @param filtros Filtros validados (servicio obligatorio por seguridad multi-cliente)
-     * @returns Array de rondas con métricas (completas, delays, etc.)
-     */
     static async getReportesRondas(filtros) {
         const parsed = ReporteFiltroSchema.parse(filtros);
-        // Query Prisma: Registros por servicio, ordenados por timestamp
         const registros = await vigiladorRepository_1.prisma.registro.findMany({
             where: {
                 servicioId: parsed.servicioId,
@@ -38,15 +28,14 @@ class ReporteService {
                 vigiladorId: parsed.vigiladorId,
             },
             include: {
-                vigilador: true, // Nombre/legajo
-                punto: true, // Nombre punto
+                vigilador: true,
+                punto: true,
             },
             orderBy: { timestamp: 'asc' },
         });
         if (!registros.length) {
             throw new errorHandler_1.ValidationError('No hay registros para los filtros proporcionados');
         }
-        // Agregación: Agrupar por vigilador y detectar rondas (lógica secuencial)
         const rondasPorVigilador = {};
         registros.forEach((reg) => {
             const key = reg.vigiladorId;
@@ -59,8 +48,7 @@ class ReporteService {
                 novedades: reg.novedades,
             });
         });
-        // Detección incumplimientos (ej: tiempo max 15min entre puntos)
-        const MAX_TIEMPO_ENTRE_PUNTOS = 15 * 60 * 1000; // ms
+        const MAX_TIEMPO_ENTRE_PUNTOS = 15 * 60 * 1000;
         Object.entries(rondasPorVigilador).forEach(([vigiladorId, ronda]) => {
             for (let i = 1; i < ronda.length; i++) {
                 const diff = new Date(ronda[i].timestamp).getTime() - new Date(ronda[i - 1].timestamp).getTime();

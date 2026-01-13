@@ -1,8 +1,4 @@
 "use strict";
-// backend/src/services/authService.ts
-// Servicio de autenticación multi-rol - Mejores prácticas 2026: JWT scoping por servicio, bcrypt v6+, Zod runtime validation
-// Type-safety estricta: narrowing explícito para env vars, no any/unknown sin guards
-// Logging Pino estructurado (objeto primero), errores normalizados, JSDoc completo
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -26,10 +22,8 @@ if (!JWT_SECRET_RAW || JWT_SECRET_RAW.length < 48) {
     logger_1.default.error(errorContext, '🚨 JWT_SECRET no configurado o demasiado débil (mínimo 48 caracteres seguros)');
     throw new Error('Error de configuración crítica: JWT_SECRET inválido o ausente - Verifica .env y reinicia');
 }
-// Narrowing explícito post-check (resuelve TS2769: TS ahora ve string garantizado)
 const JWT_SECRET = JWT_SECRET_RAW;
 const SALT_ROUNDS = 12;
-// Esquemas Zod para entrada segura (normalización + mensajes custom)
 const RegisterSchema = zod_1.z.object({
     email: zod_1.z.string().email('Email inválido').min(5),
     password: zod_1.z.string().min(8, 'Mínimo 8 caracteres'),
@@ -39,16 +33,10 @@ const LoginSchema = zod_1.z.object({
     email: zod_1.z.string().email('Email inválido'),
     password: zod_1.z.string().min(1, 'Contraseña requerida'),
 });
-/**
- * Registra un nuevo usuario con rol y scoping servicio opcional.
- * @param data Datos validados (email, password, role?)
- * @returns Usuario creado sin password (seguridad)
- * @throws ValidationError si duplicado/inválido
- */
 async function registerUser(data) {
-    const parsed = RegisterSchema.parse(data); // Throw ZodError si inválido
+    const parsed = RegisterSchema.parse(data);
     const existingUser = await vigiladorRepository_1.prisma.user.findUnique({
-        where: { email: parsed.email.toLowerCase() }, // Normalización: lowercase para uniqueness
+        where: { email: parsed.email.toLowerCase() },
     });
     if (existingUser) {
         logger_1.default.warn({ email: parsed.email }, '⚠️ Intento de registro duplicado');
@@ -61,22 +49,16 @@ async function registerUser(data) {
             password: hashedPassword,
             role: parsed.role,
         },
-        select: { id: true, email: true, role: true }, // Excluye password (best practice)
+        select: { id: true, email: true, role: true },
     });
     logger_1.default.info({ userId: user.id, role: user.role }, '✅ Usuario registrado exitosamente');
     return user;
 }
-/**
- * Autentica usuario y genera JWT con scoping.
- * @param data Datos validados (email, password)
- * @returns { token: string }
- * @throws ForbiddenError si credenciales inválidas
- */
 async function loginUser(data) {
     const parsed = LoginSchema.parse(data);
     const user = await vigiladorRepository_1.prisma.user.findUnique({
         where: { email: parsed.email.toLowerCase() },
-        include: { servicio: true }, // Include para scoping CLIENT
+        include: { servicio: true },
     });
     if (!user) {
         logger_1.default.warn({ email: parsed.email }, '⚠️ Login fallido: usuario no encontrado');
@@ -87,23 +69,16 @@ async function loginUser(data) {
         logger_1.default.warn({ userId: user.id }, '⚠️ Login fallido: contraseña incorrecta');
         throw new errorHandler_1.ForbiddenError('Credenciales inválidas');
     }
-    // Payload con scoping: servicioId solo para CLIENT
     const payload = {
         id: user.id,
         email: user.email,
         role: user.role,
         ...(user.role === 'CLIENT' && user.servicioId ? { servicioId: user.servicioId } : {}),
     };
-    // Firma segura: expiresIn normalizado, algoritmo default HS256 (seguro para secrets fuertes)
     const token = jsonwebtoken_1.default.sign(payload, JWT_SECRET, { expiresIn: '1h' });
     logger_1.default.info({ userId: user.id, role: user.role, servicioId: payload.servicioId }, '✅ Login exitoso - JWT generado');
     return { token };
 }
-/**
- * Middleware factory para autenticación por roles.
- * @param allowedRoles Roles permitidos (e.g., ['ADMIN'])
- * @returns Middleware Express con type-safety (augmenta req.user)
- */
 function authMiddleware(allowedRoles) {
     return (req, res, next) => {
         const authHeader = req.headers.authorization;
@@ -114,7 +89,6 @@ function authMiddleware(allowedRoles) {
         const token = authHeader.split(' ')[1];
         try {
             const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
-            // Validación scoping: para CLIENT, verifica servicioId en query/body
             if (decoded.role === 'CLIENT') {
                 const servicioIdFromReq = req.query.servicioId || req.body.servicioId;
                 if (servicioIdFromReq && servicioIdFromReq !== decoded.servicioId) {
@@ -126,7 +100,7 @@ function authMiddleware(allowedRoles) {
                 logger_1.default.warn({ attemptedRole: decoded.role, userId: decoded.id }, '⚠️ Rol no autorizado');
                 throw new errorHandler_1.ForbiddenError('Acceso denegado - rol insuficiente');
             }
-            req.user = decoded; // Type-safe gracias a express.d.ts
+            req.user = decoded;
             logger_1.default.info({ userId: decoded.id, role: decoded.role, path: req.path }, '✅ Autenticación JWT exitosa');
             next();
         }

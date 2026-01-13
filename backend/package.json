@@ -4,11 +4,11 @@
   "main": "dist/app.js",
   "type": "commonjs",
   "scripts": {
-    "build": "rimraf dist && npx prisma generate && tsc",
     "dev": "ts-node src/app.ts",
+    "build": "rimraf dist && prisma generate && tsc",
     "start": "node dist/app.js",
-    "start:prod": "node dist/app.js",
     "prisma:generate": "prisma generate",
+    "start:prod": "node dist/app.js",
     "prisma:studio": "prisma studio",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",

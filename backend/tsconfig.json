@@ -1,20 +1,23 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "module": "commonjs",
-    "moduleResolution": "node",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist",                      // ← Obligatorio: salida a dist
-    "rootDir": "./src",                      // ← Entrada desde src (ajusta si tu código está en root)
-    "typeRoots": ["./node_modules/@types", "./src/types"],
-    "resolveJsonModule": true,
-    "incremental": true,                     // OK, pero limpia cache si falla
-    "sourceMap": true                        // Útil para debug
+    "moduleResolution": "node",
+    "sourceMap": true,              // útil para debug en prod si hace falta
+    "removeComments": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

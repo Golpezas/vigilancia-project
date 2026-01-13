@@ -22,7 +22,6 @@ const requireAuth = (allowedRoles = ['ADMIN', 'CLIENT']) => {
         try {
             const decoded = jsonwebtoken_1.default.verify(token, JWT_SECRET);
             req.user = decoded;
-            // Validación multi-cliente (scoping)
             if (decoded.role === 'CLIENT' && req.query.servicioId && req.query.servicioId !== decoded.servicioId) {
                 throw new errorHandler_1.ForbiddenError('Acceso denegado: servicio no autorizado');
             }

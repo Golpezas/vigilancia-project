@@ -7,34 +7,26 @@ exports.VigiladorController = void 0;
 const vigiladorService_1 = require("../services/vigiladorService");
 const zod_1 = require("zod");
 const errorHandler_1 = require("../utils/errorHandler");
-const logger_1 = __importDefault(require("../utils/logger")); // Logger Pino centralizado (structured logging 2026)
-// Esquema Zod para validación estricta y normalizada
+const logger_1 = __importDefault(require("../utils/logger"));
 const SubmitSchema = zod_1.z.object({
     nombre: zod_1.z.string().min(1).trim(),
     legajo: zod_1.z.number().int().positive(),
     punto: zod_1.z.number().int().min(1).max(10),
     novedades: zod_1.z.string().optional(),
-    timestamp: zod_1.z.string().datetime({ offset: true }), // ISO con offset normalizado
+    timestamp: zod_1.z.string().datetime({ offset: true }),
     geo: zod_1.z.object({
         lat: zod_1.z.number().nullable(),
         long: zod_1.z.number().nullable(),
     }).optional(),
 });
 class VigiladorController {
-    /**
-     * Maneja el envío de un registro de escaneo.
-     * Valida datos, procesa con el servicio y responde.
-     * Logging estructurado Pino-compliant (objeto primero, mensaje segundo).
-     */
     static async submit(req, res, next) {
-        // ← Orden correcto Pino: contexto primero, mensaje segundo
         logger_1.default.info({ body: req.body }, '📥 Nueva request a /api/submit');
         try {
             const parseResult = SubmitSchema.safeParse(req.body);
             if (!parseResult.success) {
                 const firstIssue = parseResult.error.issues[0];
                 const errMsg = `Datos inválidos: ${firstIssue.path.join('.')} - ${firstIssue.message}`;
-                // ← Contexto estructurado primero
                 logger_1.default.warn({ issues: parseResult.error.issues }, '⚠️ Validación fallida');
                 throw new errorHandler_1.ValidationError(errMsg);
             }
@@ -55,7 +47,7 @@ class VigiladorController {
         }
     }
     static async getEstado(req, res, next) {
-        logger_1.default.info({ legajo: req.params.legajo, ip: req.ip }, '📥 Request a /api/estado/:legajo'); // Contexto + IP para security logs
+        logger_1.default.info({ legajo: req.params.legajo, ip: req.ip }, '📥 Request a /api/estado/:legajo');
         try {
             const legajo = parseInt(req.params.legajo, 10);
             if (isNaN(legajo) || legajo <= 0) {
@@ -71,7 +63,7 @@ class VigiladorController {
                 message: err.message,
                 stack: err.stack,
                 params: req.params,
-                ip: req.ip, // Extra context para forensic
+                ip: req.ip,
             };
             logger_1.default.error(errorContext, '❌ Error en getEstado');
             next(err);

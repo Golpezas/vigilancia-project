@@ -1,16 +1,14 @@
 "use strict";
-// src/utils/errorHandler.ts
-// Manejo centralizado de errores - Mejores prácticas 2026: herencia estricta, logging en creación, type-safety
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotFoundError = exports.ForbiddenError = exports.ValidationError = exports.AppError = void 0;
 class AppError extends Error {
+    statusCode;
+    isOperational;
     constructor(message, statusCode = 500, isOperational = true) {
         super(message);
         this.statusCode = statusCode;
         this.isOperational = isOperational;
-        // Logging early en creación (normalización para depuración)
-        console.warn(`[AppError created] ${statusCode}: ${message}`); // Temporal para test; reemplaza con logger si Pino ready
-        // Stack trace correcto en TS (best practice)
+        console.warn(`[AppError created] ${statusCode}: ${message}`);
         Error.captureStackTrace(this, this.constructor);
     }
 }
