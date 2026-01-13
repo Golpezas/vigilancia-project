@@ -8,12 +8,15 @@
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist",
-    "rootDir": "./",
-    "typeRoots": ["./node_modules/@types", "./types"],  // ← Asegura búsqueda de tipos
-    "resolveJsonModule": true,                         // ← Para importar qrs-config.json
-    "types": ["node"]
+    "outDir": "./dist",                      // ← Obligatorio: salida a dist
+    "rootDir": "./src",                      // ← Entrada desde src (ajusta si tu código está en root)
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "resolveJsonModule": true,
+    "incremental": true,                     // OK, pero limpia cache si falla
+    // ¡IMPORTANTE! Elimina o pon en false si existe:
+    // "noEmit": true,                       // ← Elimínalo o pon false
+    "sourceMap": true                        // Útil para debug
   },
-  "include": ["src/**/*", "src/types/**/*.d.ts"],
-  "exclude": ["node_modules", "dist", "scripts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
