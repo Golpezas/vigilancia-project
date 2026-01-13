@@ -12,12 +12,12 @@ const api = axios.create({
   },
 });
 
-api.interceptors.response.use(
-  res => res,
-  err => {
-    console.error('🚨 API Error:', { url: err.config?.url, message: err.message, response: err.response?.data });
-    return Promise.reject(err.response?.data?.error || 'Error de conexión - verifique red o auth');
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('adminToken');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
-);
+  return config;
+}, (error) => Promise.reject(error));
 
 export default api;

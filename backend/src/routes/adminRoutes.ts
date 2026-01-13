@@ -157,19 +157,20 @@ const CreateServicioSchema = z.object({
  * @route POST /servicio
  * @access Admin only
  */
-router.post('/servicio', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/crear-servicio', requireAdmin, async (req: Request, res: Response) => {
   try {
-    const { nombre, puntoIds } = CreateServicioSchema.parse(req.body);
+    const parsed = CreateServicioSchema.parse(req.body);
+    logger.info({ admin: req.user?.email, nombre: parsed.nombre, puntos: parsed.puntoIds.length }, '📥 Intentando crear servicio');
 
     // Transacción atómica con tipado correcto (resuelve TS2769 y TS2339)
     const servicio = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       const nuevoServicio = await tx.servicio.upsert({
-        where: { nombre: nombre.trim() }, // Normalización: trim para evitar duplicados sucios
+        where: { nombre: parsed.nombre.trim() }, // Normalización: trim para evitar duplicados sucios
         update: {},
-        create: { nombre: nombre.trim() },
+        create: { nombre: parsed.nombre.trim() },
       });
 
-      for (const puntoId of puntoIds) {
+      for (const puntoId of parsed.puntoIds) {
         await tx.servicioPunto.upsert({
           where: { servicioId_puntoId: { servicioId: nuevoServicio.id, puntoId } },
           update: {},
@@ -180,30 +181,18 @@ router.post('/servicio', requireAdmin, async (req: AuthenticatedRequest, res: Re
       return nuevoServicio;
     });
 
-    logger.info(
-      { admin: req.user?.email, servicioId: servicio.id, nombre: servicio.nombre, puntos: puntoIds.length },
-      'Servicio creado/actualizado exitosamente'
-    );
-
-    res.json({
-      success: true,
-      servicio: { id: servicio.id, nombre: servicio.nombre },
-    } as ApiResponse<any>);
+    logger.info({ admin: req.user?.email, servicioId: servicio.id }, '✅ Servicio creado');
+    res.json({ success: true, servicio: { id: servicio.id, nombre: servicio.nombre } });
   } catch (err: unknown) {
     if (err instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Datos inválidos',
-        details: err.errors,
-      } as ApiResponse);
+      logger.warn({ issues: err.issues, admin: req.user?.email }, '⚠️ Datos inválidos en crear-servicio');
+      return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
+    } else if (err instanceof PrismaClientKnownRequestError) {
+      logger.error({ code: err.code, meta: err.meta, admin: req.user?.email }, '🚨 Error Prisma en crear-servicio');
+      return res.status(409).json({ error: 'Conflicto en DB (e.g., nombre duplicado)' });
     }
-
-    if (err instanceof PrismaClientKnownRequestError) {
-      if (err.code === 'P2002') return res.status(409).json({ error: 'Servicio duplicado' } as ApiResponse);
-      if (err.code === 'P2025') return res.status(404).json({ error: 'Punto no encontrado' } as ApiResponse);
-    }
-
-    logger.error({ err, body: req.body, admin: req.user?.email }, 'Error creando servicio');
-    res.status(500).json({ error: 'Error interno del servidor' } as ApiResponse);
+    logger.error({ err, admin: req.user?.email }, '❌ Error inesperado en crear-servicio');
+    res.status(500).json({ error: 'Error interno' });
   }
 });
 

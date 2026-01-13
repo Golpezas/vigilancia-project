@@ -13,17 +13,9 @@ interface PuntoDisponible {
   nombre: string;
 }
 
-interface ServicioCreadoResponse {
-  success: boolean;
-  servicio: {
-    id: string;
-    nombre: string;
-  };
-}
-
 interface AdminPanelProps {
-  token: string | null; // Requerido para auth en API calls
-  onLogout: () => void; // Ahora usado en UI
+  token: string;  // Requerido ahora (type-safety)
+  onLogout: () => void;
 }
 
 //const ADMIN_KEY = 'G4mul0t3@2106'; // ← Cambiar por env segura
@@ -55,23 +47,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!token) {  // Validación extra (best practice)
+      setMensaje('Error: Sesión no iniciada. Logueate nuevamente.');
+      return;
+    }
+    if (puntosSeleccionados.length === 0) {
+      setMensaje('Error: Selecciona al menos un punto.');
+      return;
+    }
     setLoading(true);
-    setError(null);
     setMensaje(null);
 
     try {
-      const res = await api.post<ServicioCreadoResponse>('/api/admin/servicios', {
+      const response = await api.post('/api/admin/crear-servicio', {
         nombre,
-        puntos: puntosSeleccionados,
+        puntoIds: puntosSeleccionados,  // Normalizado a puntoIds (match backend schema)
       }, {
-        headers: { Authorization: `Bearer ${token}` }, // Auth en POST
+        headers: { Authorization: `Bearer ${token}` },  // Usa JWT!
       });
-      setMensaje(`Servicio "${res.data.servicio.nombre}" creado exitosamente`);
-      setNombre('');
-      setPuntosSeleccionados([]);
-    } catch (err: unknown) {
-      const msg = isAxiosError(err) ? err.response?.data.error : 'Error al crear servicio';
-      setError(msg);
+
+      if (response.data.success) {
+        setMensaje(`Servicio "${nombre}" creado exitosamente con ${puntosSeleccionados.length} puntos`);
+        setNombre('');
+        setPuntosSeleccionados([]);
+      } else {
+        throw new Error(response.data.error || 'Error desconocido');
+      }
+    } catch (err) {
+      const errorMsg = isAxiosError(err) ? (err.response?.data.error || err.message) : String(err);
+      setMensaje(`Error: ${errorMsg}`);
+      if (errorMsg.includes('Token') || errorMsg.includes('expirado')) {
+        onLogout();  // Auto-logout si token inválido (UX moderna)
+      }
     } finally {
       setLoading(false);
     }
@@ -87,12 +94,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout }) => {
     <div className="max-w-md mx-auto mt-10 p-6 bg-gray-800 rounded-lg shadow-lg">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-white">Panel Admin - Crear Servicio</h2>
-        <button
-          onClick={onLogout} // ← Aquí se usa onLogout: fixes el error de unused-var
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition"
-        >
-          Cerrar Sesión
-        </button>
+        <button onClick={onLogout} className="mt-4 py-2 bg-red-600 text-white rounded">Logout Admin</button>
       </div>
 
       {error && (
