@@ -94,7 +94,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout }) => {
     <div className="max-w-md mx-auto mt-10 p-6 bg-gray-800 rounded-lg shadow-lg">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-white">Panel Admin - Crear Servicio</h2>
-        <button onClick={onLogout} className="mt-4 py-2 bg-red-600 text-white rounded">Logout Admin</button>
+        <div className="mt-8">
+          <button
+            onClick={onLogout}
+            className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+          >
+            Logout y Volver a Modo Vigilador
+          </button>
+        </div>
       </div>
 
       {error && (

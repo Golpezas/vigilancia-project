@@ -16,96 +16,78 @@ type AdminValues = z.infer<typeof AdminSchema>;
 interface AdminLoginProps {
   onSuccess: (token: string) => void;
   onError: (err: string) => void;
+  onBack: () => void;  // ← Nueva prop para volver
 }
 
-export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError }) => {
+export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBack }) => {
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<AdminValues>({
     resolver: zodResolver(AdminSchema),
-    defaultValues: {
-      email: 'admin@pruebas.com',
-    },
+    defaultValues: { email: 'admin@pruebas.com' },
   });
 
   const onSubmit = async (data: AdminValues) => {
     try {
-      const res = await api.post('/auth/login', data); // ← ¡Aquí está la ruta correcta!
+      const res = await api.post('/api/auth/login', data);  // ← Ruta completa normalizada (match backend)
 
       const token = res.data.token;
       const role = res.data.role?.toUpperCase();
 
-      if (!token) {
-        throw new Error('No se recibió token en la respuesta');
-      }
+      if (!token) throw new Error('Respuesta sin token');
+      if (role !== 'ADMIN') throw new Error('Rol no autorizado');
 
-      if (role !== 'ADMIN') {
-        throw new Error('Acceso denegado: solo administradores');
-      }
-
-      onSuccess(token); // ← ¡Llamada crítica que faltaba!
+      onSuccess(token);
     } catch (err: unknown) {
-      let message = 'Error al iniciar sesión';
-
-      if (isAxiosError(err)) {
-        message =
-          err.response?.data?.error ||
-          err.response?.data?.message ||
-          'Credenciales inválidas o error de servidor';
-      } else if (err instanceof Error) {
-        message = err.message;
-      }
-
-      onError(message);
-      console.error('[AdminLogin] Error completo:', err);
+      const msg = isAxiosError(err)
+        ? err.response?.data?.error || 'Credenciales inválidas'
+        : (err as Error).message || 'Error desconocido';
+      onError(msg);
     }
   };
 
   return (
-    <div className="w-full max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
-      <h2 className="text-2xl font-bold text-center text-white mb-8">
-        Iniciar sesión Admin
+    <div className="max-w-md mx-auto p-8 bg-gray-800 rounded-xl shadow-xl">
+      {/* Removemos mensaje fijo de "Acceso denegado" - lo manejamos con error prop */}
+      <h2 className="text-2xl font-bold text-white mb-6 text-center">
+        Iniciar Sesión Admin
       </h2>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div>
-          <input
-            {...register('email')}
-            type="email"
-            placeholder="admin@pruebas.com"
-            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 
-                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-          />
-          {errors.email && (
-            <p className="mt-2 text-sm text-red-400">{errors.email.message}</p>
-          )}
-        </div>
+        <input
+          {...register('email')}
+          type="email"
+          placeholder="admin@pruebas.com"
+          className="w-full p-4 bg-gray-700 text-white border border-gray-600 rounded-lg focus:border-blue-500 outline-none"
+        />
+        {errors.email && <p className="text-red-400 text-sm">{errors.email.message}</p>}
 
-        <div>
-          <input
-            {...register('password')}
-            type="password"
-            placeholder="Contraseña"
-            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 
-                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-          />
-          {errors.password && (
-            <p className="mt-2 text-sm text-red-400">{errors.password.message}</p>
-          )}
-        </div>
+        <input
+          {...register('password')}
+          type="password"
+          placeholder="Contraseña"
+          className="w-full p-4 bg-gray-700 text-white border border-gray-600 rounded-lg focus:border-blue-500 outline-none"
+        />
+        {errors.password && <p className="text-red-400 text-sm">{errors.password.message}</p>}
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 
-                   text-white font-bold rounded-lg transition-all disabled:opacity-50 
-                   disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg disabled:opacity-50"
         >
           {isSubmitting ? 'Iniciando...' : 'Iniciar sesión Admin'}
         </button>
       </form>
+
+      {/* Botón para regresar - NUEVO */}
+      <button
+        onClick={onBack}
+        className="w-full mt-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition"
+      >
+        Volver a Modo Vigilador
+      </button>
     </div>
   );
 };
