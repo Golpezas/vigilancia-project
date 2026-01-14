@@ -5,8 +5,9 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import api from '../services/api';
-import { isAxiosError } from 'axios';
+//import api from '../services/api';
+//import { isAxiosError } from 'axios';
+import axios from 'axios';
 
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
@@ -29,24 +30,52 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
 
   const onSubmit = async (data: AdminValues) => {
     try {
-      const res = await api.post('/api/auth/login', data);  // Ruta corregida (match backend)
+      // URL ABSOLUTA - cámbiala por tu URL REAL de Railway
+      const BACKEND_URL = 'https://backend-production-d4731.up.railway.app';
 
-      // Validación estricta con narrowing
-      if (typeof res.data.token !== 'string') {
-        throw new Error('Respuesta inválida: token ausente');
-      }
-      if (res.data.role?.toUpperCase() !== 'ADMIN') {
-        throw new Error('Acceso denegado: rol no autorizado');
+      console.log('Intentando login directo a:', `${BACKEND_URL}/auth/login`);
+
+      const response = await axios.post(
+        `${BACKEND_URL}/auth/login`,
+        data,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+
+      console.log('Respuesta recibida:', response.status, response.data);
+
+      const token = response.data.token;
+      if (!token || typeof token !== 'string') {
+        throw new Error('No se recibió token válido en la respuesta');
       }
 
-      onSuccess(res.data.token);
-    } catch (err: unknown) {
+      // Validación de rol (opcional pero recomendado)
+      if (response.data.role?.toUpperCase() !== 'ADMIN') {
+        throw new Error('Acceso denegado: solo administradores');
+      }
+
+      onSuccess(token);
+
+    } catch (err) {
       let message = 'Error al iniciar sesión';
-      if (isAxiosError(err)) {
-        message = err.response?.data.error || 'Credenciales inválidas';
-      } else if (err instanceof Error) {
-        message = err.message;
+
+      if (axios.isAxiosError(err)) {
+        message = err.response?.data?.error 
+          || err.response?.data?.message 
+          || 'Error de conexión o credenciales inválidas';
+        console.error('Detalles del error Axios:', {
+          status: err.response?.status,
+          data: err.response?.data,
+          message: err.message,
+        });
+      } else {
+        message = (err as Error).message || 'Error desconocido';
       }
+
       onError(message);
     }
   };
