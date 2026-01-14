@@ -1,5 +1,5 @@
 // src/components/AdminLogin.tsx
-// Versión simplificada para regreso al punto funcional: URL absoluta, sin chequeo de rol, validación mínima Zod para token
+// Versión simplificada y robusta: axios directo con URL absoluta (probada en logs), validación mínima, sin dependencias de api.ts
 
 import React from 'react';
 import { useForm } from 'react-hook-form';
@@ -7,18 +7,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import axios from 'axios';
 
-// Schema para inputs
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
 });
 
 type AdminValues = z.infer<typeof AdminSchema>;
-
-// Schema para respuesta (solo valida token, sin role para evitar errores)
-const LoginResponseSchema = z.object({
-  token: z.string().min(20, 'Token inválido o ausente'),
-});
 
 interface AdminLoginProps {
   onSuccess: (token: string) => void;
@@ -34,31 +28,35 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
 
   const onSubmit = async (data: AdminValues) => {
     try {
-      const BACKEND_URL = 'https://backend-production-d4731.up.railway.app';
-
+      // URL absoluta probada y funcional según logs anteriores
       const response = await axios.post(
-        `${BACKEND_URL}/auth/login`, // Ruta que funcionó en logs anteriores (sin /api/)
+        'https://backend-production-d4731.up.railway.app/auth/login', // <--- Ruta que funcionó
         data,
         {
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+          },
           timeout: 15000,
         }
       );
 
-      // Validación mínima con Zod (solo token)
-      const parsed = LoginResponseSchema.safeParse(response.data);
-
-      if (!parsed.success) {
-        throw new Error('Respuesta inválida: token ausente o inválido');
+      // Validación mínima para token (Zod para normalización)
+      const token = response.data.token;
+      if (!token || typeof token !== 'string' || token.length < 20) {
+        throw new Error('Token inválido o ausente en la respuesta');
       }
 
-      onSuccess(parsed.data.token);
+      // ¡Éxito! Pasamos el token limpio
+      onSuccess(token);
 
-    } catch (err: unknown) {
+    } catch (err) {
       let message = 'Error al iniciar sesión';
 
       if (axios.isAxiosError(err)) {
-        message = err.response?.data?.error || 'Ruta no encontrada o credenciales inválidas';
+        message = err.response?.data?.error 
+          || err.response?.data?.message 
+          || err.message 
+          || 'Ruta no encontrada o credenciales inválidas';
       } else if (err instanceof Error) {
         message = err.message;
       }
