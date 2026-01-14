@@ -1,4 +1,6 @@
 // src/App.tsx
+// Orquestador principal con estado normalizado, render condicional y handlers type-safe (2026 best practices: no side-effects, DRY)
+
 import { useState } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
@@ -15,56 +17,63 @@ function App() {
   const handleAdminLogin = (newToken: string) => {
     localStorage.setItem('adminToken', newToken);
     setToken(newToken);
-    setIsAdminMode(true);  // ← Asegura cambio de modo
-    setError(null);        // Limpia errores
+    setIsAdminMode(true);
+    setError(null);  // Limpia error
+    setMensaje(null);  // Limpia mensaje viejo
   };
 
   const handleAdminLogout = () => {
     localStorage.removeItem('adminToken');
     setToken(null);
     setIsAdminMode(false);
-    setMensaje('Vuelto a modo Vigilador');
-  };
-
-  const handleAdminBack = () => {
-    setIsAdminMode(false);  // ← Nueva handler para back desde login
+    setMensaje('Has vuelto al modo Vigilador');
     setError(null);
   };
 
+  const handleAdminBack = () => {
+    setIsAdminMode(false);
+    setError(null);
+    setMensaje(null);
+  };
+
   const handleScan = (p: number) => setPunto(p);
+
   const handleSuccess = (msg: string) => {
     setMensaje(msg);
     setPunto(null);
+    setError(null);
   };
+
   const handleError = (err: string) => setError(err);
+
   const handleBack = () => setPunto(null);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center p-4">
       <div className="w-full max-w-md">
         <h1 className="text-3xl font-bold text-center mb-8">Control de Rondas QR</h1>
 
         {!isAdminMode && (
           <button
             onClick={() => setIsAdminMode(true)}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg mb-8"
+            className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg mb-8 font-medium transition"
           >
             Ingresar como Administrador
           </button>
         )}
 
-        {mensaje && <div className="mb-4 p-4 bg-green-800 rounded">{mensaje}</div>}
-        {error && <div className="mb-4 p-4 bg-red-800 rounded">{error}</div>}
+        {mensaje && (
+          <div className="mb-6 p-4 bg-green-800 rounded-lg text-center">{mensaje}</div>
+        )}
+        {error && (
+          <div className="mb-6 p-4 bg-red-800 rounded-lg text-center">{error}</div>
+        )}
 
         {isAdminMode ? (
           token ? (
             <AdminPanel token={token} onLogout={handleAdminLogout} />
           ) : (
-            <AdminLogin
-              onSuccess={handleAdminLogin}
-              onError={handleError}
-              onBack={handleAdminBack}  // ← Pasamos la nueva prop
-            />
+            <AdminLogin onSuccess={handleAdminLogin} onError={handleError} onBack={handleAdminBack} />
           )
         ) : !punto ? (
           <QRScanner onScan={handleScan} onError={handleError} />
