@@ -1,5 +1,5 @@
 // src/components/AdminLogin.tsx
-// Login Admin con validación Zod para inputs y respuesta API, normalización de ruta y UX moderna (2026 best practices: runtime validation, data normalization, fallback structures)
+// Versión simplificada para regreso al punto funcional: URL absoluta, sin chequeo de rol, validación mínima Zod para token
 
 import React from 'react';
 import { useForm } from 'react-hook-form';
@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import axios from 'axios';
 
-// Schema para inputs (normalizado y estricto)
+// Schema para inputs
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -15,14 +15,10 @@ const AdminSchema = z.object({
 
 type AdminValues = z.infer<typeof AdminSchema>;
 
-// Schema para respuesta del backend (runtime validation + transformación/normalización)
+// Schema para respuesta (solo valida token, sin role para evitar errores)
 const LoginResponseSchema = z.object({
   token: z.string().min(20, 'Token inválido o ausente'),
-  role: z.string().optional(),
-}).transform((val) => ({
-  token: val.token,
-  role: val.role?.toUpperCase() || 'ADMIN', // Normalización fallback (asume ADMIN si no viene, para prod ajusta)
-}));
+});
 
 interface AdminLoginProps {
   onSuccess: (token: string) => void;
@@ -40,66 +36,29 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
     try {
       const BACKEND_URL = 'https://backend-production-d4731.up.railway.app';
 
-      // Ruta normalizada con prefijo completo (best practice: estructura configurable)
-      const endpoints = [
-        '/api/auth/login',  // Primera tentativa: con /api/
-        '/auth/login',      // Fallback: sin /api/ (basado en log anterior que funcionó)
-      ];
-
-      let response;
-      
-      for (const path of endpoints) {
-        try {
-          response = await axios.post(
-            `${BACKEND_URL}${path}`,
-            data,
-            {
-              headers: { 'Content-Type': 'application/json' },
-              timeout: 15000,
-            }
-          );
-          break; // Sale si tiene éxito
-        } catch (innerErr) {
-          if (!axios.isAxiosError(innerErr) || innerErr.response?.status !== 404) {
-            throw innerErr; // Si no es 404, re-lanza error real
-          }
-          console.warn(`[Auth Fallback] 404 en ${path}, intentando siguiente...`);
+      const response = await axios.post(
+        `${BACKEND_URL}/auth/login`, // Ruta que funcionó en logs anteriores (sin /api/)
+        data,
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000,
         }
-      }
+      );
 
-      if (!response) {
-        throw new Error('Todas las rutas fallaron: servidor no responde en endpoints esperados');
-      }
-
-      // Validación y normalización con Zod (type-safe, evita errores en data cruda)
+      // Validación mínima con Zod (solo token)
       const parsed = LoginResponseSchema.safeParse(response.data);
 
       if (!parsed.success) {
-        const errorDetails = parsed.error.format();
-        throw new Error(
-          errorDetails.token?._errors?.[0] ||
-          errorDetails._errors?.[0] ||
-          'Respuesta inválida del servidor'
-        );
+        throw new Error('Respuesta inválida: token ausente o inválido');
       }
 
-      const { token, role } = parsed.data;
-
-      // Chequeo de rol (normalizado, con fallback si no viene)
-      if (role !== 'ADMIN') {
-        throw new Error('Acceso denegado: rol no autorizado');
-      }
-
-      onSuccess(token);
+      onSuccess(parsed.data.token);
 
     } catch (err: unknown) {
       let message = 'Error al iniciar sesión';
 
       if (axios.isAxiosError(err)) {
-        message = err.response?.data?.error ||
-                  err.response?.data?.message ||
-                  err.message ||
-                  'Error de conexión o credenciales inválidas';
+        message = err.response?.data?.error || 'Ruta no encontrada o credenciales inválidas';
       } else if (err instanceof Error) {
         message = err.message;
       }
