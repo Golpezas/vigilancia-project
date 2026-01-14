@@ -1,14 +1,13 @@
 // src/components/AdminLogin.tsx
-// Login Admin con validación Zod, error handling Axios y UX moderna (2026 best practices: no hardcode, dynamic errors)
+// Login Admin con validación Zod para inputs y respuesta API, error handling Axios y UX moderna (2026 best practices: runtime validation, data normalization, no hardcode errors)
 
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-//import api from '../services/api';
-//import { isAxiosError } from 'axios';
-import axios from 'axios';
+import axios from 'axios'; // Usamos directo para aislamiento
 
+// Schema para inputs (ya lo tenías)
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -16,10 +15,19 @@ const AdminSchema = z.object({
 
 type AdminValues = z.infer<typeof AdminSchema>;
 
+// NUEVO: Schema para normalizar respuesta del backend (best practice: valida y transforma data)
+const LoginResponseSchema = z.object({
+  token: z.string().min(1, 'Token inválido o ausente'),
+  role: z.string().toUpperCase().pipe(z.literal('ADMIN')), // Normaliza a mayúsculas y valida estrictamente
+}).transform((data) => ({
+  ...data,
+  role: data.role.toUpperCase(), // Normalización extra DRY
+}));
+
 interface AdminLoginProps {
   onSuccess: (token: string) => void;
   onError: (err: string) => void;
-  onBack: () => void;  // Prop para volver a modo vigilador
+  onBack: () => void;
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBack }) => {
@@ -30,50 +38,45 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
 
   const onSubmit = async (data: AdminValues) => {
     try {
-      // URL ABSOLUTA - cámbiala por tu URL REAL de Railway
       const BACKEND_URL = 'https://backend-production-d4731.up.railway.app';
-
-      console.log('Intentando login directo a:', `${BACKEND_URL}/auth/login`);
 
       const response = await axios.post(
         `${BACKEND_URL}/auth/login`,
         data,
         {
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           timeout: 15000,
         }
       );
 
-      console.log('Respuesta recibida:', response.status, response.data);
+      // Validación y normalización con Zod (type-safe, evita errores como role undefined)
+      const parsedResponse = LoginResponseSchema.safeParse(response.data);
 
-      const token = response.data.token;
-      if (!token || typeof token !== 'string') {
-        throw new Error('No se recibió token válido en la respuesta');
+      if (!parsedResponse.success) {
+        const zodErrors = parsedResponse.error.format();
+        let errorMsg = 'Respuesta inválida del servidor';
+        if (zodErrors.token) errorMsg = 'Token inválido o ausente';
+        if (zodErrors.role) errorMsg = 'Rol no autorizado o ausente';
+        throw new Error(errorMsg);
       }
 
-      // Validación de rol (opcional pero recomendado)
-      if (response.data.role?.toUpperCase() !== 'ADMIN') {
-        throw new Error('Acceso denegado: solo administradores');
+      // Datos normalizados
+      const { token, role } = parsedResponse.data;
+
+      //Chequeo de rol (temporalmente comentado para testing - descomenta en prod)
+      if (role !== 'ADMIN') {
+        throw new Error('Acceso denegado: rol no autorizado');
       }
 
       onSuccess(token);
 
-    } catch (err) {
+    } catch (err: unknown) {
       let message = 'Error al iniciar sesión';
 
       if (axios.isAxiosError(err)) {
-        message = err.response?.data?.error 
-          || err.response?.data?.message 
-          || 'Error de conexión o credenciales inválidas';
-        console.error('Detalles del error Axios:', {
-          status: err.response?.status,
-          data: err.response?.data,
-          message: err.message,
-        });
-      } else {
-        message = (err as Error).message || 'Error desconocido';
+        message = err.response?.data?.error || err.response?.data?.message || 'Error de conexión o credenciales inválidas';
+      } else if (err instanceof Error) {
+        message = err.message;
       }
 
       onError(message);
@@ -114,7 +117,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
         </button>
       </form>
 
-      {/* Botón Volver - Siempre visible */}
       <button
         onClick={onBack}
         className="w-full mt-6 py-3 bg-gray-600 hover:bg-gray-500 text-white rounded-lg font-medium transition"
