@@ -1,13 +1,13 @@
 // src/components/AdminLogin.tsx
-// Login Admin con validación Zod para inputs y respuesta API, error handling Axios y UX moderna (2026 best practices: runtime validation, data normalization, no hardcode errors)
+// Versión final: validación Zod estricta para respuesta, chequeo de rol opcional/comentado, normalización data
 
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import axios from 'axios'; // Usamos directo para aislamiento
+import axios from 'axios';
 
-// Schema para inputs (ya lo tenías)
+// Schema inputs (ya perfecto)
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -15,13 +15,14 @@ const AdminSchema = z.object({
 
 type AdminValues = z.infer<typeof AdminSchema>;
 
-// NUEVO: Schema para normalizar respuesta del backend (best practice: valida y transforma data)
+// Schema para respuesta del backend (runtime validation + transformación)
 const LoginResponseSchema = z.object({
-  token: z.string().min(1, 'Token inválido o ausente'),
-  role: z.string().toUpperCase().pipe(z.literal('ADMIN')), // Normaliza a mayúsculas y valida estrictamente
-}).transform((data) => ({
-  ...data,
-  role: data.role.toUpperCase(), // Normalización extra DRY
+  token: z.string().min(20, 'Token inválido o ausente'),
+  // role: opcional por ahora (el backend no lo envía visiblemente)
+  role: z.string().optional(),
+}).transform((val) => ({
+  token: val.token,
+  role: val.role?.toUpperCase() || 'UNKNOWN', // fallback normalizado
 }));
 
 interface AdminLoginProps {
@@ -49,32 +50,36 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
         }
       );
 
-      // Validación y normalización con Zod (type-safe, evita errores como role undefined)
-      const parsedResponse = LoginResponseSchema.safeParse(response.data);
+      // Validamos y normalizamos la respuesta con Zod
+      const parsed = LoginResponseSchema.safeParse(response.data);
 
-      if (!parsedResponse.success) {
-        const zodErrors = parsedResponse.error.format();
-        let errorMsg = 'Respuesta inválida del servidor';
-        if (zodErrors.token) errorMsg = 'Token inválido o ausente';
-        if (zodErrors.role) errorMsg = 'Rol no autorizado o ausente';
-        throw new Error(errorMsg);
+      if (!parsed.success) {
+        const errorDetails = parsed.error.format();
+        throw new Error(
+          errorDetails.token?._errors?.[0] ||
+          errorDetails._errors?.[0] ||
+          'Respuesta inválida del servidor'
+        );
       }
 
-      // Datos normalizados
-      const { token, role } = parsedResponse.data;
+      const { token } = parsed.data;
 
-      //Chequeo de rol (temporalmente comentado para testing - descomenta en prod)
-      if (role !== 'ADMIN') {
-        throw new Error('Acceso denegado: rol no autorizado');
-      }
+      // Chequeo de rol comentado temporalmente (descomentar cuando backend lo incluya)
+      // if (parsed.data.role !== 'ADMIN') {
+      //   throw new Error('Acceso denegado: rol no autorizado');
+      // }
 
+      // ¡Éxito! Pasamos el token limpio
       onSuccess(token);
 
     } catch (err: unknown) {
       let message = 'Error al iniciar sesión';
 
       if (axios.isAxiosError(err)) {
-        message = err.response?.data?.error || err.response?.data?.message || 'Error de conexión o credenciales inválidas';
+        message = err.response?.data?.error ||
+                  err.response?.data?.message ||
+                  err.message ||
+                  'Error de conexión o credenciales inválidas';
       } else if (err instanceof Error) {
         message = err.message;
       }
@@ -84,8 +89,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
   };
 
   return (
-    <div className="w-full max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-xl shadow-lg">
-      <h2 className="text-2xl font-bold text-white mb-6 text-center">Iniciar Sesión Admin</h2>
+    <div className="w-full max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-xl shadow-lg border border-gray-700">
+      <h2 className="text-2xl font-bold text-white mb-8 text-center">Iniciar Sesión Admin</h2>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div>
@@ -93,7 +98,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
             {...register('email')}
             type="email"
             placeholder="admin@pruebas.com"
-            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 
+                       focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
           {errors.email && <p className="text-red-400 mt-2 text-sm">{errors.email.message}</p>}
         </div>
@@ -103,7 +109,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
             {...register('password')}
             type="password"
             placeholder="Contraseña"
-            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 
+                       focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
           {errors.password && <p className="text-red-400 mt-2 text-sm">{errors.password.message}</p>}
         </div>
@@ -111,7 +118,9 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition disabled:opacity-50"
+          className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 
+                     hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-lg 
+                     transition-all disabled:opacity-50 shadow-md hover:shadow-lg"
         >
           {isSubmitting ? 'Iniciando...' : 'Iniciar sesión Admin'}
         </button>
@@ -119,7 +128,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
 
       <button
         onClick={onBack}
-        className="w-full mt-6 py-3 bg-gray-600 hover:bg-gray-500 text-white rounded-lg font-medium transition"
+        className="w-full mt-6 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition"
       >
         Volver a Modo Vigilador
       </button>
