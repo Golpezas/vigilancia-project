@@ -1,91 +1,89 @@
-// src/App.tsx
-import { useState } from 'react';
-import { QRScanner } from './components/QRScanner';
-import { RegistroForm } from './components/RegistroForm';
-import { AdminPanel } from './components/AdminPanel';
-import { AdminLogin } from './components/AdminLogin';
+// src/app.ts
+import express, { Request, Response, NextFunction } from 'express'; // Type-safety explícito
+import cors from 'cors';
+import helmet from 'helmet';
+import vigiladorRoutes from './routes/vigiladorRoutes';
+import { AppError } from './utils/errorHandler';
+import logger from './utils/logger'; // Logger centralizado Pino
+import adminRoutes from './routes/adminRoutes';
+import authRoutes from './routes/authRoutes';
 
-function App() {
-  const [punto, setPunto] = useState<number | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(
-    !!localStorage.getItem('adminToken') // Persistencia inicial
-  );
-  const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
+const app = express();
 
-  const handleAdminLogin = (newToken: string) => {
-    localStorage.setItem('adminToken', newToken);
-    setToken(newToken);
-    setIsAdminMode(true);
+// Puerto normalizado con fallback seguro
+const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
+
+// Middlewares (seguridad + parsing escalable)
+app.use(helmet());
+app.use(cors({
+  origin: '*', // TODO: Restringir en prod a dominios específicos
+  credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
+
+// Rutas desacopladas
+app.use('/api', vigiladorRoutes);
+
+app.use('/api/auth', authRoutes);
+
+app.use('/api/admin', adminRoutes); // ← Nueva ruta protegida
+
+// Health check con logging estructurado
+app.get('/', (req: Request, res: Response) => {
+  const response = {
+    message: 'API Vigilancia QR - Backend corriendo correctamente',
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  };
+  // ← Orden correcto: objeto primero (mergeado en log), mensaje segundo
+  logger.info({ response }, '🔍 Health check accedido');
+  res.json(response);
+});
+
+// Handler global de errores (centralizado + structured)
+app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+  const context = {
+    path: req.path,
+    method: req.method,
+    body: req.body,
+    query: req.query,
+    errorMessage: err instanceof Error ? err.message : 'Error desconocido',
+    stack: err instanceof Error ? err.stack : undefined,
   };
 
-  const handleAdminLogout = () => {
-    localStorage.removeItem('adminToken');
-    setToken(null);
-    setIsAdminMode(false);
-    setMensaje('Has vuelto al modo Vigilador');
-  };
+  // Usa child logger para context adicional (best practice Pino: no sobreescribir global)
+  const errorLogger = logger.child({ reqId: req.headers['x-request-id'] || 'unknown' }); // Opcional reqId para traceability
+  errorLogger.error(context, '🚨 Error global no manejado');
 
-  const handleScan = (p: number) => setPunto(p);
-  const handleSuccess = (msg: string) => {
-    setMensaje(msg);
-    setPunto(null);
-  };
-  const handleError = (err: string) => setError(err);
-  const handleBack = () => setPunto(null);
+  let status = 500;
+  let message = 'Error interno del servidor';
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4">
-      <div className="w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center mb-8 tracking-tight">
-          Control de Rondas QR
-        </h1>
+  if (err instanceof AppError) {
+    status = err.statusCode;
+    message = err.message;
+  } else if (err instanceof Error) {
+    // Fallback para errores genéricos (normalización)
+    message = err.message;
+  }
 
-        {/* Botón de cambio de modo - SIEMPRE visible cuando NO estamos en admin */}
-        {!isAdminMode && (
-          <button
-            onClick={() => setIsAdminMode(true)}
-            className="mb-8 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 
-                       active:bg-indigo-800 text-white font-medium rounded-xl 
-                       transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
-          >
-            Ingresar como Administrador →
-          </button>
-        )}
+  res.status(status).json({ error: message });
+});
 
-        {/* Mensajes globales */}
-        {mensaje && (
-          <div className="mb-6 p-4 bg-green-900/60 border border-green-700 rounded-xl text-center">
-            {mensaje}
-          </div>
-        )}
-        {error && (
-          <div className="mb-6 p-4 bg-red-900/60 border border-red-700 rounded-xl text-center">
-            {error}
-          </div>
-        )}
+// 404 handler
+app.use('*', (req: Request, res: Response) => {
+  // ← Objeto primero
+  logger.warn({ path: req.path, method: req.method }, '⚠️ Ruta no encontrada');
+  res.status(404).json({
+    error: 'Ruta no encontrada'
+  });
+});
 
-        {/* Renderizado condicional principal */}
-        {isAdminMode ? (
-          token ? (
-            <AdminPanel token={token} onLogout={handleAdminLogout} />
-          ) : (
-            <AdminLogin onSuccess={handleAdminLogin} onError={handleError} />
-          )
-        ) : !punto ? (
-          <QRScanner onScan={handleScan} onError={handleError} />
-        ) : (
-          <RegistroForm
-            punto={punto}
-            onSuccess={handleSuccess}
-            onError={handleError}
-            onBack={handleBack}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
+// Startup con logging
+app.listen(PORT, '0.0.0.0', () => {
+  logger.info({ port: PORT }, '🚀 Servidor backend corriendo en puerto');
+  if (process.env.NODE_ENV !== 'production') {
+    logger.debug({ url: `http://localhost:${PORT}` }, '🔗 Acceso local');
+  }
+});
 
-export default App;
+export default app;

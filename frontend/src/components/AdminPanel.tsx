@@ -89,7 +89,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout, servici
     }
 
     try {
-      // Cambio clave: ruta relativa SIN /api inicial
+      // Cambio clave: ruta relativa SIN /api inicial.....
       const res = await api.post('/admin/crear-servicio', parsedData.data, {
         headers: { Authorization: `Bearer ${token}` },
       });
