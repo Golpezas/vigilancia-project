@@ -1,13 +1,14 @@
+// src/components/AdminLogin.tsx
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import api from '../services/api';
-import { isAxiosError } from 'axios'; // ← IMPORT CRUCIAL
+import { isAxiosError } from 'axios';
 
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
-  password: z.string().min(8, 'Mínimo 8 caracteres'),
+  password: z.string().min(6, 'Mínimo 6 caracteres'),
 });
 
 type AdminValues = z.infer<typeof AdminSchema>;
@@ -18,37 +19,68 @@ interface AdminLoginProps {
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError }) => {
-  const { register, handleSubmit, formState: { errors } } = useForm<AdminValues>({
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<AdminValues>({
     resolver: zodResolver(AdminSchema),
   });
 
   const onSubmit = async (data: AdminValues) => {
     try {
       const res = await api.post('/auth/login', data);
-      if (res.data.role !== 'ADMIN') {
-        throw new Error('Rol no autorizado');
+
+      // Verificación robusta y flexible
+      const role = res.data.role?.toUpperCase(); // normalizamos a mayúsculas
+      if (role !== 'ADMIN') {
+        throw new Error('Acceso denegado: solo administradores pueden entrar aquí');
       }
+
+      // Guardamos el token y notificamos éxito
       onSuccess(res.data.token);
-    } catch (err: unknown) { // ← unknown es correcto
-      let message = 'Error de login';
+    } catch (err: unknown) {
+      let errorMessage = 'Error al iniciar sesión';
+
       if (isAxiosError(err)) {
-        message = err.response?.data?.error || err.message || message;
+        errorMessage = err.response?.data?.error || err.message || errorMessage;
       } else if (err instanceof Error) {
-        message = err.message;
+        errorMessage = err.message;
       }
-      onError(message);
+
+      onError(errorMessage);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-w-md mx-auto mt-10">
-      <input {...register('email')} placeholder="Email admin" className="w-full p-3 border rounded" />
-      {errors.email && <p className="text-red-500">{errors.email.message}</p>}
+    <div className="max-w-md mx-auto mt-12 p-8 bg-gray-800 rounded-xl shadow-2xl">
+      <h2 className="text-3xl font-bold text-center mb-8 text-white">Iniciar sesión Admin</h2>
 
-      <input type="password" {...register('password')} placeholder="Contraseña" className="w-full p-3 border rounded" />
-      {errors.password && <p className="text-red-500">{errors.password.message}</p>}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <div>
+          <input
+            {...register('email')}
+            type="email"
+            placeholder="admin@pruebas.com"
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+          />
+          {errors.email && <p className="text-red-400 mt-2 text-sm">{errors.email.message}</p>}
+        </div>
 
-      <button type="submit" className="w-full py-3 bg-red-600 text-white rounded">Iniciar sesión Admin</button>
-    </form>
+        <div>
+          <input
+            {...register('password')}
+            type="password"
+            placeholder="Contraseña"
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+          />
+          {errors.password && <p className="text-red-400 mt-2 text-sm">{errors.password.message}</p>}
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSubmitting ? 'Iniciando...' : 'Iniciar sesión Admin'}
+        </button>
+      </form>
+    </div>
   );
 };

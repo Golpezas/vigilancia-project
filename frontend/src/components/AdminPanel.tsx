@@ -149,6 +149,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout }) => {
         >
           {loading ? 'Creando servicio...' : 'Crear Servicio'}
         </button>
+
+        <div className="mt-10 border-t border-gray-700 pt-6">
+          <button
+            onClick={onLogout}
+            className="w-full md:w-auto px-8 py-3 bg-gray-700 hover:bg-gray-800 text-white rounded-lg font-medium transition shadow-md flex items-center justify-center gap-2 mx-auto"
+          >
+            <svg className="h-5 w-5" /* icono de logout */ />
+            Volver a modo Vigilador
+          </button>
+        </div>
+
       </form>
 
       {mensaje && (
@@ -158,17 +169,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout }) => {
           {mensaje}
         </div>
       )}
-
-      <div className="mt-10 border-t border-gray-700 pt-6">
-        <button
-          onClick={onLogout}
-          className="w-full md:w-auto px-8 py-3 bg-gray-700 hover:bg-gray-800 text-white rounded-lg font-medium transition shadow-md flex items-center justify-center gap-2 mx-auto"
-        >
-          <svg className="h-5 w-5" /* icono de logout */ />
-          Volver a modo Vigilador
-        </button>
-      </div>
-
+      
     </div>
   );
 };

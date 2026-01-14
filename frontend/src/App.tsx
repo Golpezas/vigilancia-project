@@ -17,8 +17,8 @@ function App() {
   const handleAdminLogin = (newToken: string) => {
     localStorage.setItem('adminToken', newToken);
     setToken(newToken);
-    setIsAdminMode(true);
-    setError(null); // Limpiamos error al loguearse con éxito
+    setIsAdminMode(true);          // ← Esto es lo que activa el panel
+    setError(null);
   };
 
   const handleAdminLogout = () => {
