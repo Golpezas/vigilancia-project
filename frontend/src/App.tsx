@@ -9,107 +9,81 @@ function App() {
   const [punto, setPunto] = useState<number | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
-  // Estados para el flujo de administración
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(
+    !!localStorage.getItem('adminToken') // Persistencia inicial
+  );
   const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
 
   const handleAdminLogin = (newToken: string) => {
     localStorage.setItem('adminToken', newToken);
     setToken(newToken);
-    setIsAdminMode(true);          // ← Esto es lo que activa el panel
-    setError(null);
+    setIsAdminMode(true);
   };
 
   const handleAdminLogout = () => {
     localStorage.removeItem('adminToken');
     setToken(null);
     setIsAdminMode(false);
-    setMensaje(null);
-    setError(null);
+    setMensaje('Has vuelto al modo Vigilador');
   };
 
-  const handleScan = (scannedPunto: number) => {
-    setPunto(scannedPunto);
-  };
-
+  const handleScan = (p: number) => setPunto(p);
   const handleSuccess = (msg: string) => {
     setMensaje(msg);
-    setPunto(null); // Volver al scanner después de registrar
-  };
-
-  const handleError = (errMsg: string) => {
-    setError(errMsg);
-  };
-
-  const handleBack = () => {
     setPunto(null);
   };
+  const handleError = (err: string) => setError(err);
+  const handleBack = () => setPunto(null);
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-blue-800 text-white p-4">
-        <h1 className="text-2xl font-bold">Control de Rondas - Vigilancia</h1>
-      </header>
+    <div className="min-h-screen bg-gray-900 text-gray-100 flex flex-col items-center p-4">
+      <div className="w-full max-w-md">
+        <h1 className="text-3xl font-bold text-center mb-8 tracking-tight">
+          Control de Rondas QR
+        </h1>
 
-      <main className="container mx-auto px-4 py-6">
-        {/* Mensajes globales - siempre visibles */}
+        {/* Botón de cambio de modo - SIEMPRE visible cuando NO estamos en admin */}
+        {!isAdminMode && (
+          <button
+            onClick={() => setIsAdminMode(true)}
+            className="mb-8 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 
+                       active:bg-indigo-800 text-white font-medium rounded-xl 
+                       transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+          >
+            Ingresar como Administrador →
+          </button>
+        )}
+
+        {/* Mensajes globales */}
         {mensaje && (
-          <div className="mt-4 p-5 bg-green-100 border border-green-400 text-green-800 rounded-lg text-center font-bold">
+          <div className="mb-6 p-4 bg-green-900/60 border border-green-700 rounded-xl text-center">
             {mensaje}
           </div>
         )}
-
         {error && (
-          <div className="mt-4 p-5 bg-red-100 border border-red-400 text-red-800 rounded-lg text-center">
+          <div className="mb-6 p-4 bg-red-900/60 border border-red-700 rounded-xl text-center">
             {error}
           </div>
         )}
 
-        {/* Lógica de renderizado condicional */}
+        {/* Renderizado condicional principal */}
         {isAdminMode ? (
-          // Estamos en modo administrador
           token ? (
-            <AdminPanel 
-              token={token} 
-              onLogout={handleAdminLogout} 
-            />
+            <AdminPanel token={token} onLogout={handleAdminLogout} />
           ) : (
-            <AdminLogin 
-              onSuccess={handleAdminLogin} 
-              onError={handleError} 
-            />
+            <AdminLogin onSuccess={handleAdminLogin} onError={handleError} />
           )
+        ) : !punto ? (
+          <QRScanner onScan={handleScan} onError={handleError} />
         ) : (
-          // Modo normal (vigilador)
-          !punto ? (
-            <div className="max-w-md mx-auto">
-              <QRScanner 
-                onScan={handleScan} 
-                onError={handleError} 
-              />
-              
-              {/* Botón para entrar al modo admin */}
-              <div className="mt-8 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsAdminMode(true)}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition shadow-md"
-                >
-                  Modo Administrador
-                </button>
-              </div>
-            </div>
-          ) : (
-            <RegistroForm
-              punto={punto}
-              onSuccess={handleSuccess}
-              onError={handleError}
-              onBack={handleBack}
-            />
-          )
+          <RegistroForm
+            punto={punto}
+            onSuccess={handleSuccess}
+            onError={handleError}
+            onBack={handleBack}
+          />
         )}
-      </main>
+      </div>
     </div>
   );
 }
