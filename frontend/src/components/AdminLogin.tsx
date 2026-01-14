@@ -19,38 +19,55 @@ interface AdminLoginProps {
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError }) => {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<AdminValues>({
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<AdminValues>({
     resolver: zodResolver(AdminSchema),
+    defaultValues: {
+      email: 'admin@pruebas.com',
+    },
   });
 
   const onSubmit = async (data: AdminValues) => {
     try {
-      const res = await api.post('/auth/login', data);
+      const res = await api.post('/auth/login', data); // ← ¡Aquí está la ruta correcta!
 
-      // Verificación robusta y flexible
-      const role = res.data.role?.toUpperCase(); // normalizamos a mayúsculas
-      if (role !== 'ADMIN') {
-        throw new Error('Acceso denegado: solo administradores pueden entrar aquí');
+      const token = res.data.token;
+      const role = res.data.role?.toUpperCase();
+
+      if (!token) {
+        throw new Error('No se recibió token en la respuesta');
       }
 
-      // Guardamos el token y notificamos éxito
-      onSuccess(res.data.token);
+      if (role !== 'ADMIN') {
+        throw new Error('Acceso denegado: solo administradores');
+      }
+
+      onSuccess(token); // ← ¡Llamada crítica que faltaba!
     } catch (err: unknown) {
-      let errorMessage = 'Error al iniciar sesión';
+      let message = 'Error al iniciar sesión';
 
       if (isAxiosError(err)) {
-        errorMessage = err.response?.data?.error || err.message || errorMessage;
+        message =
+          err.response?.data?.error ||
+          err.response?.data?.message ||
+          'Credenciales inválidas o error de servidor';
       } else if (err instanceof Error) {
-        errorMessage = err.message;
+        message = err.message;
       }
 
-      onError(errorMessage);
+      onError(message);
+      console.error('[AdminLogin] Error completo:', err);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto mt-12 p-8 bg-gray-800 rounded-xl shadow-2xl">
-      <h2 className="text-3xl font-bold text-center mb-8 text-white">Iniciar sesión Admin</h2>
+    <div className="w-full max-w-md mx-auto mt-10 p-8 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
+      <h2 className="text-2xl font-bold text-center text-white mb-8">
+        Iniciar sesión Admin
+      </h2>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div>
@@ -58,9 +75,12 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError }) =>
             {...register('email')}
             type="email"
             placeholder="admin@pruebas.com"
-            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
-          {errors.email && <p className="text-red-400 mt-2 text-sm">{errors.email.message}</p>}
+          {errors.email && (
+            <p className="mt-2 text-sm text-red-400">{errors.email.message}</p>
+          )}
         </div>
 
         <div>
@@ -68,15 +88,20 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError }) =>
             {...register('password')}
             type="password"
             placeholder="Contraseña"
-            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 
+                     focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
-          {errors.password && <p className="text-red-400 mt-2 text-sm">{errors.password.message}</p>}
+          {errors.password && (
+            <p className="mt-2 text-sm text-red-400">{errors.password.message}</p>
+          )}
         </div>
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 
+                   text-white font-bold rounded-lg transition-all disabled:opacity-50 
+                   disabled:cursor-not-allowed shadow-md hover:shadow-lg"
         >
           {isSubmitting ? 'Iniciando...' : 'Iniciar sesión Admin'}
         </button>
