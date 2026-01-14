@@ -1,9 +1,8 @@
 // src/services/api.ts
 import axios from 'axios';
 
-// Recomendado: baseURL sin /api al final
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL 
-  || 'https://backend-production-d4731.up.railway.app';
+  || 'https://backend-production-d4731.up.railway.app/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

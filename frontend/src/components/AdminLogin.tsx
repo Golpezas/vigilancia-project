@@ -1,14 +1,11 @@
 // src/components/AdminLogin.tsx
-// Versión estable y normalizada 2026: URL absoluta hardcodeada (probada en logs), validación Zod runtime, manejo de errores type-safe
-// Eliminamos api.ts temporalmente para garantizar que la petición llegue al backend
-
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import axios from 'axios';
+import api from '../services/api';          // ← ¡Importar la instancia centralizada!
+import { isAxiosError } from 'axios';
 
-// Schema para inputs (validación estricta)
 const AdminSchema = z.object({
   email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Mínimo 6 caracteres'),
@@ -16,7 +13,6 @@ const AdminSchema = z.object({
 
 type AdminValues = z.infer<typeof AdminSchema>;
 
-// Schema mínimo para respuesta (solo token, sin role para evitar falsos negativos)
 const LoginResponseSchema = z.object({
   token: z.string().min(20, 'Token inválido o ausente'),
 });
@@ -35,52 +31,49 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onError, onBa
 
   const onSubmit = async (data: AdminValues) => {
     try {
-      // URL absoluta + ruta probada que generó "Login exitoso" en logs anteriores
-      const BACKEND_URL = 'https://backend-production-d4731.up.railway.app/auth/login';
-
-      // Log estructurado para depuración (mejores prácticas: traceability)
       console.log('[LOGIN REQUEST]', {
-        url: BACKEND_URL,
+        endpoint: '/auth/login',
         email: data.email,
         timestamp: new Date().toISOString(),
       });
 
-      const response = await axios.post(
-        BACKEND_URL,
-        data,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 15000,
-        }
-      );
+      // ¡Aquí está la clave! Usamos api (baseURL + /api ya incluido)
+      const response = await api.post('/auth/login', data);
 
       console.log('[LOGIN RESPONSE]', {
         status: response.status,
-        dataKeys: Object.keys(response.data),
+        hasToken: !!response.data?.token,
       });
 
-      // Validación runtime con Zod (normalización de data)
       const parsed = LoginResponseSchema.safeParse(response.data);
 
       if (!parsed.success) {
-        throw new Error('Respuesta inválida: ' + parsed.error.message);
+        throw new Error(`Respuesta inválida: ${parsed.error.issues[0]?.message || 'Formato desconocido'}`);
       }
 
-      // ¡Éxito! Token normalizado y validado
       onSuccess(parsed.data.token);
 
     } catch (err: unknown) {
       let message = 'Error al iniciar sesión';
 
-      if (axios.isAxiosError(err)) {
-        message = err.response?.data?.error 
-          || err.response?.data?.message 
-          || err.message 
-          || 'No se pudo conectar al servidor de autenticación';
+      if (isAxiosError(err)) {
+        const status = err.response?.status;
+        const serverMessage = err.response?.data?.error || err.response?.data?.message;
+
+        if (status === 401) {
+          message = serverMessage || 'Credenciales inválidas';
+        } else if (status === 400) {
+          message = 'Datos inválidos';
+        } else if (status) {
+          message = `Error ${status}: ${serverMessage || err.message}`;
+        } else {
+          message = 'No se pudo conectar al servidor';
+        }
       } else if (err instanceof Error) {
         message = err.message;
       }
 
+      console.error('[LOGIN ERROR]', { message, error: err });
       onError(message);
     }
   };
