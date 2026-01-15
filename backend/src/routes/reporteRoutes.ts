@@ -37,6 +37,7 @@ router.get('/rondas', requireAuth(['ADMIN', 'CLIENT']), async (req: Request, res
     logger.debug({ count: Object.keys(reportes).length }, 'Reporte generado exitosamente');
 
     res.json(reportes);
+    
   } catch (err: unknown) {
     if (err instanceof z.ZodError) {
       logger.warn({ issues: err.issues }, '⚠️ Validación de query fallida en reportes/rondas');
