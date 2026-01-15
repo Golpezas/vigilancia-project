@@ -35,7 +35,7 @@ async function main() {
         orderBy: { punto: { id: 'asc' } },
       },
     },
-  });
+  }) as Array<{ id: string; nombre: string; puntos: Array<{ punto: { id: string; nombre: string } | null }> }>;
 
   if (servicios.length === 0) {
     console.warn('⚠️ No hay servicios en la base de datos');

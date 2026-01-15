@@ -30,10 +30,10 @@ app.use('/api/auth', authRoutes);
 
 app.use('/api/admin', adminRoutes); // ← Nueva ruta protegida
 
-app.use('/api/reportes', reporteRoutes);
+app.use('/api/reportes/rondas', reporteRoutes);
 
 app.use('*', (req, res) => {
-  logger.warn({ path: req.path, method: req.method }, '⚠️ Ruta no encontrada');
+  logger.warn({ path: req.path, method: req.method, query: req.query }, '⚠️ Ruta no encontrada');
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
 

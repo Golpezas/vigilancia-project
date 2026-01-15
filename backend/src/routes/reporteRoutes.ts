@@ -15,17 +15,34 @@ const ReporteQuerySchema = z.object({
   vigiladorId: z.string().uuid().optional(),
 });
 
-router.get('/rondas', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/rondas', requireAuth(['ADMIN', 'CLIENT']), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Validación runtime + inferencia de tipo
-    const filtros = ReporteQuerySchema.parse(req.query);
+    const filtros = ReporteQuerySchema.parse({
+      ...req.query,
+      servicioId: req.query.servicioId ?? req.user?.servicioId, // ← Fallback desde JWT para CLIENT
+    });
 
-    logger.info({ filtros, user: req.user }, '📥 Request a /api/reportes/rondas autenticada');
+    logger.info(
+      {
+        filtros,
+        userId: req.user?.id,
+        role: req.user?.role,
+        ip: req.ip,
+      },
+      '📥 Reporte de rondas solicitado (autenticado)'
+    );
 
     const reportes = await ReporteService.getReportesRondas(filtros);
+    
+    logger.debug({ count: Object.keys(reportes).length }, 'Reporte generado exitosamente');
+
     res.json(reportes);
   } catch (err: unknown) {
-    next(err); // Usa handler global de errores
+    if (err instanceof z.ZodError) {
+      logger.warn({ issues: err.issues }, '⚠️ Validación de query fallida en reportes/rondas');
+      return res.status(400).json({ error: 'Parámetros inválidos', details: err.errors });
+    }
+    next(err);
   }
 });
 
