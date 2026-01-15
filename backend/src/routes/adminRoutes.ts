@@ -4,7 +4,7 @@
 // Normalización: Trim en nombres, validación UUID en IDs futuros
 // Seguridad: Role-based access, manejo idempotente con upsert
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../repositories/vigiladorRepository';
 import { z } from 'zod';
 import logger from '../utils/logger';
@@ -157,7 +157,7 @@ const CreateServicioSchema = z.object({
  * @route POST /servicio
  * @access Admin only
  */
-router.post('/crear-servicio', requireAdmin, async (req: Request, res: Response) => {
+router.post('/crear-servicio', requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const parsed = CreateServicioSchema.parse(req.body);
     logger.info({ admin: req.user?.email, nombre: parsed.nombre, puntos: parsed.puntoIds.length }, '📥 Intentando crear servicio');
@@ -193,6 +193,53 @@ router.post('/crear-servicio', requireAdmin, async (req: Request, res: Response)
     }
     logger.error({ err, admin: req.user?.email }, '❌ Error inesperado en crear-servicio');
     res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+// ── Listar todos los puntos disponibles ───────────────────────────────────────
+/**
+ * Devuelve la lista completa de puntos disponibles para selección en creación de servicio.
+ * @route GET /puntos
+ * @access Admin only
+ */
+router.get('/puntos', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    // Query eficiente: solo campos necesarios (normalización data)
+    const puntos = await prisma.punto.findMany({
+      select: {
+        id: true,
+        nombre: true,
+      },
+      orderBy: { id: 'asc' }, // Secuencia predecible
+    });
+
+    // Validación output con Zod (evita enviar data corrupta)
+    const outputSchema = z.array(
+      z.object({
+        id: z.number().int().positive(),
+        nombre: z.string().min(1),
+      })
+    );
+
+    const parsed = outputSchema.safeParse(puntos);
+    if (!parsed.success) {
+      logger.warn({ issues: parsed.error.issues, admin: req.user?.email }, '⚠️ Datos de puntos inválidos en DB');
+      throw new ValidationError('Datos de puntos inconsistentes');
+    }
+
+    // Logging estructurado con traceability (quién pidió, cuántos resultados)
+    logger.info(
+      {
+        adminEmail: req.user?.email,
+        count: parsed.data.length,
+        path: req.path,
+      },
+      '✅ Lista de puntos devuelta exitosamente'
+    );
+
+    res.json(parsed.data);
+  } catch (err: unknown) {
+    next(err); // Delega a handler global
   }
 });
 

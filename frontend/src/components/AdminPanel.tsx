@@ -46,7 +46,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout, servici
 
       try {
         // Cambio clave: ruta relativa SIN /api inicial
-        const res = await api.get('/puntos', {
+        const res = await api.get('/admin/puntos', {  // ← cambio aquí: agrega /admin/
           headers: { Authorization: `Bearer ${token}` },
         });
 
