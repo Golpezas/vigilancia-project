@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { isAxiosError } from 'axios';
 import { z } from 'zod';
+import { useQuery } from '@tanstack/react-query'; // React Query v5 para fetching/caching
 import DashboardPage from '../pages/DashboardPage';
 
 // Schemas Zod (DRY y validación estricta)
@@ -19,8 +20,16 @@ const ServicioSchema = z.object({
   puntoIds: z.array(z.number().int().positive()).min(1, 'Seleccione al menos un punto'),
 });
 
+const ServicioListSchema = z.array(
+  z.object({
+    id: z.string().uuid(),
+    nombre: z.string().min(1),
+  })
+);
+
 type PuntoDisponible = z.infer<typeof PuntoSchema>;
 type ServicioValues = z.infer<typeof ServicioSchema>;
+type Servicio = z.infer<typeof ServicioListSchema>[0];
 
 interface AdminPanelProps {
   token: string;
@@ -38,6 +47,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout, servici
   const [loading, setLoading] = useState<boolean>(true);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedServicioId, setSelectedServicioId] = useState<string | null>(servicioId || null); // Inicial con prop si existe
+
+  // Fetch lista de servicios (caching con React Query, type-safe)
+  const { data: servicios, isLoading: loadingServicios, error: errorServicios } = useQuery<Servicio[], Error>({
+    queryKey: ['servicios'],
+    queryFn: async () => {
+      const res = await api.get('/admin/servicios', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const parsed = ServicioListSchema.safeParse(res.data);
+      if (!parsed.success) throw new Error('Datos de servicios inválidos: ' + parsed.error.issues.map(i => i.message).join(', '));
+      return parsed.data;
+    },
+  });
 
   useEffect(() => {
     const fetchPuntos = async () => {
@@ -46,7 +69,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout, servici
 
       try {
         // Cambio clave: ruta relativa SIN /api inicial
-        const res = await api.get('/admin/puntos', {  // ← cambio aquí: agrega /admin/
+        const res = await api.get('/admin/puntos', {
           headers: { Authorization: `Bearer ${token}` },
         });
 
@@ -185,13 +208,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ token, onLogout, servici
         </form>
       )}
 
+      {/* Selección de Servicio para Dashboard (scoping multi-cliente) */}
+      <div className="mt-8">
+        {errorServicios ? (
+          <p className="text-red-400 text-center">Error al cargar servicios: {errorServicios.message}</p>
+        ) : loadingServicios ? (
+          <p className="text-gray-400 text-center">Cargando servicios...</p>
+        ) : (
+          <select
+            value={selectedServicioId || ''}
+            onChange={(e) => setSelectedServicioId(e.target.value || null)}
+            className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none"
+          >
+            <option value="">Seleccione un servicio para el dashboard</option>
+            {servicios?.map((s) => (
+              <option key={s.id} value={s.id}>{s.nombre}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
       {/* Integración de Dashboard (subcomponente desacoplado) */}
       <div className="mt-12 border-t border-gray-700 pt-6">
         <h2 className="text-2xl font-bold text-white mb-4">Dashboard de Rondas</h2>
-        {servicioId ? (
-          <DashboardPage servicioId={servicioId} /> // Prop normalizada desde token
+        {selectedServicioId ? (
+          <DashboardPage servicioId={selectedServicioId} /> // Usa selección dinámica
         ) : (
-          <p className="text-gray-400 text-center">No hay ID de servicio disponible. Verifica login.</p>
+          <p className="text-gray-400 text-center">Seleccione un servicio para ver el dashboard.</p>
         )}
       </div>
     </div>

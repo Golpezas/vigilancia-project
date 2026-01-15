@@ -3,15 +3,27 @@
 // Mejores prácticas 2026: Tipado estricto, transacciones atómicas, logging estructurado, validación Zod runtime
 // Normalización: Trim en nombres, validación UUID en IDs futuros
 // Seguridad: Role-based access, manejo idempotente con upsert
+// Error handling moderno: type narrowing seguro sin imports frágiles de Prisma internals
 
 import { Router, Request, Response, NextFunction } from 'express';
 import { prisma } from '../repositories/vigiladorRepository';
 import { z } from 'zod';
 import logger from '../utils/logger';
 import { ValidationError } from '../utils/errorHandler';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library'; // Para errores específicos
-import type { Prisma } from '@prisma/client'; // ← Import clave para TransactionClient (resuelve TS2305)
 import { requireAuth } from '../middlewares/authMiddleware';
+import { Prisma } from '@prisma/client';
+
+// Helper para type narrowing seguro de errores Prisma conocidos (best practice 2026)
+// Evita dependencias internas y funciona en Prisma 5/6/7
+function isPrismaKnownRequestError(err: unknown): err is { code: string; meta?: unknown } {
+  return (
+    err != null &&
+    typeof err === 'object' &&
+    'code' in err &&
+    typeof (err as any).code === 'string' &&
+    (err as any).code.startsWith('P') // Todos los códigos Prisma conocidos comienzan con P
+  );
+}
 
 const router = Router();
 
@@ -105,7 +117,9 @@ router.post('/vigilador/asignar-servicio', requireAdmin, async (req: Authenticat
       return res.status(400).json({ error: err.message } as ApiResponse);
     }
 
-    if (err instanceof PrismaClientKnownRequestError && err.code === 'P2025') {
+    // Type narrowing moderno para errores Prisma conocidos
+    if (isPrismaKnownRequestError(err) && err.code === 'P2025') {
+      logger.warn({ code: err.code, meta: err.meta }, 'Recurso no encontrado (P2025)');
       return res.status(404).json({ error: 'Vigilador o servicio no encontrado' } as ApiResponse);
     }
 
@@ -162,16 +176,16 @@ router.post('/crear-servicio', requireAdmin, async (req: AuthenticatedRequest, r
     const parsed = CreateServicioSchema.parse(req.body);
     logger.info({ admin: req.user?.email, nombre: parsed.nombre, puntos: parsed.puntoIds.length }, '📥 Intentando crear servicio');
 
-    // Transacción atómica con tipado correcto (resuelve TS2769 y TS2339)
-    const servicio = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const nuevoServicio = await tx.servicio.upsert({
-        where: { nombre: parsed.nombre.trim() }, // Normalización: trim para evitar duplicados sucios
+    // Transacción atómica
+    const servicio = await prisma.$transaction(async (txClient) => {
+      const nuevoServicio = await (txClient as typeof prisma).servicio.upsert({
+        where: { nombre: parsed.nombre.trim() },
         update: {},
         create: { nombre: parsed.nombre.trim() },
       });
 
       for (const puntoId of parsed.puntoIds) {
-        await tx.servicioPunto.upsert({
+        await (txClient as typeof prisma).servicioPunto.upsert({
           where: { servicioId_puntoId: { servicioId: nuevoServicio.id, puntoId } },
           update: {},
           create: { servicioId: nuevoServicio.id, puntoId },
@@ -187,10 +201,26 @@ router.post('/crear-servicio', requireAdmin, async (req: AuthenticatedRequest, r
     if (err instanceof z.ZodError) {
       logger.warn({ issues: err.issues, admin: req.user?.email }, '⚠️ Datos inválidos en crear-servicio');
       return res.status(400).json({ error: 'Datos inválidos', details: err.errors });
-    } else if (err instanceof PrismaClientKnownRequestError) {
-      logger.error({ code: err.code, meta: err.meta, admin: req.user?.email }, '🚨 Error Prisma en crear-servicio');
-      return res.status(409).json({ error: 'Conflicto en DB (e.g., nombre duplicado)' });
     }
+
+    // Type narrowing moderno
+    if (isPrismaKnownRequestError(err)) {
+      logger.error(
+        { code: err.code, meta: err.meta, admin: req.user?.email },
+        '🚨 Error Prisma conocido en crear-servicio'
+      );
+
+      if (err.code === 'P2002') {
+        return res.status(409).json({ error: 'El nombre del servicio ya existe (conflicto de unicidad)' });
+      }
+
+      if (err.code === 'P2025') {
+        return res.status(404).json({ error: 'Recurso relacionado no encontrado' });
+      }
+
+      return res.status(400).json({ error: `Error de base de datos: ${err.code}` });
+    }
+
     logger.error({ err, admin: req.user?.email }, '❌ Error inesperado en crear-servicio');
     res.status(500).json({ error: 'Error interno' });
   }
@@ -240,6 +270,50 @@ router.get('/puntos', requireAdmin, async (req: AuthenticatedRequest, res: Respo
     res.json(parsed.data);
   } catch (err: unknown) {
     next(err); // Delega a handler global
+  }
+});
+
+// ── Listar servicios disponibles ──────────────────────────────────────────────
+/**
+ * Devuelve lista de servicios para selección en dashboard admin.
+ * @route GET /servicios
+ * @access Admin only
+ */
+router.get('/servicios', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const servicios = await prisma.servicio.findMany({
+      select: {
+        id: true,
+        nombre: true,
+      },
+      orderBy: { nombre: 'asc' },
+    });
+
+    const outputSchema = z.array(
+      z.object({
+        id: z.string().uuid(),
+        nombre: z.string().min(1),
+      })
+    );
+
+    const parsed = outputSchema.safeParse(servicios);
+    if (!parsed.success) {
+      logger.warn({ issues: parsed.error.issues, admin: req.user?.email }, '⚠️ Datos de servicios inválidos');
+      throw new ValidationError('Datos de servicios inconsistentes');
+    }
+
+    logger.info(
+      {
+        adminEmail: req.user?.email,
+        count: parsed.data.length,
+        path: req.path,
+      },
+      '✅ Lista de servicios devuelta'
+    );
+
+    res.json(parsed.data);
+  } catch (err: unknown) {
+    next(err);
   }
 });
 

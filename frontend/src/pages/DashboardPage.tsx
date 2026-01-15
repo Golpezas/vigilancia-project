@@ -18,7 +18,7 @@ import { formatArgentina } from '../utils/dateUtils'; // date-fns-tz para normal
 
 // Schema Zod para normalización de reportes (DRY con backend)
 const RegistroSchema = z.object({
-  punto: z.string(),
+  punto: z.string().min(1),
   timestamp: z.string().datetime(),
   geo: z.object({ lat: z.number(), long: z.number() }).nullable(),
   novedades: z.string().nullable(),
@@ -47,7 +47,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
     queryKey: ['reportes', servicioId, selectedDate, selectedVigilador],
     queryFn: async () => {
-      const res = await api.get('/api/reportes/rondas', {
+      const res = await api.get('reportes/rondas', {
         params: {
           servicioId,
           fechaDesde: `${selectedDate}T00:00:00-03:00`, // Normalización AR start

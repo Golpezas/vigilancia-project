@@ -42,14 +42,16 @@ async function main() {
 
   // Transacción con timeout alto y operaciones secuenciales
   await prisma.$transaction(async (tx) => {
+    // Type assertion: some generated client model fields may be omitted from ITX client type
+    const t = tx as unknown as any;
     logger.debug({}, '🧹 Iniciando cleanup total...');
 
     // 1. Cleanup en orden inverso (referencias primero)
-    await tx.registro.deleteMany({});
-    await tx.servicioPunto.deleteMany({});
-    await tx.vigilador.deleteMany({});
-    await tx.servicio.deleteMany({});
-    await tx.punto.deleteMany({});
+    await t.registro.deleteMany({});
+    await t.servicioPunto.deleteMany({});
+    await t.vigilador.deleteMany({});
+    await t.servicio.deleteMany({});
+    await t.punto.deleteMany({});
 
     logger.info({}, '✅ Base de datos limpiada completamente');
 
@@ -68,7 +70,7 @@ async function main() {
     const puntosCreados = new Map<string, { id: number; nombre: string }>();
 
     for (const nombre of catalogoPuntos) {
-      const punto = await tx.punto.upsert({
+      const punto = await t.punto.upsert({
         where: { nombre },
         update: {},
         create: { nombre },
@@ -79,7 +81,7 @@ async function main() {
 
     // 4. Crear servicios y asignar puntos
     for (const config of serviciosConfig) {
-      const servicio = await tx.servicio.upsert({
+      const servicio = await t.servicio.upsert({
         where: { nombre: config.nombre },
         update: {},
         create: { nombre: config.nombre },
@@ -93,7 +95,7 @@ async function main() {
           continue;
         }
 
-        await tx.servicioPunto.upsert({
+        await t.servicioPunto.upsert({
           where: {
             servicioId_puntoId: {
               servicioId: servicio.id,
