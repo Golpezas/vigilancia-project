@@ -7,10 +7,21 @@ import { PrismaClient } from '@prisma/client';
 import type { VigiladorEstado, GeoLocation } from '../types/index'; // type-only import
 import logger from '../utils/logger'; // ← Import centralizado del logger Pino
 import { ValidationError } from '../utils/errorHandler'; // ← IMPORT CLAVE FALTANTE
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-// Singleton Prisma (best practice: una sola instancia por app)
+const connectionString = process.env.DATABASE_URL; // De tu .env (normalizado)
+
+if (!connectionString) {
+  throw new Error('DATABASE_URL no configurado en .env'); // Validación early
+}
+
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+
 export const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'], // Opcional: logging para depuración en desarrollo
+  adapter, // ← Esto resuelve el error!
+  log: ['query', 'info', 'warn', 'error'], // Logging normalizado
 });
 
 /**
