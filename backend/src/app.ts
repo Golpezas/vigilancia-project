@@ -7,6 +7,7 @@ import { AppError } from './utils/errorHandler';
 import logger from './utils/logger'; // Logger centralizado Pino
 import adminRoutes from './routes/adminRoutes';
 import authRoutes from './routes/authRoutes';
+import reporteRoutes from './routes/reporteRoutes';
 
 const app = express();
 
@@ -15,6 +16,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 
 // Middlewares (seguridad + parsing escalable)
 app.use(helmet());
+
 app.use(cors({
   origin: '*', // TODO: Restringir en prod a dominios específicos
   credentials: true
@@ -27,6 +29,13 @@ app.use('/api', vigiladorRoutes);
 app.use('/api/auth', authRoutes);
 
 app.use('/api/admin', adminRoutes); // ← Nueva ruta protegida
+
+app.use('/api/reportes', reporteRoutes);
+
+app.use('*', (req, res) => {
+  logger.warn({ path: req.path, method: req.method }, '⚠️ Ruta no encontrada');
+  res.status(404).json({ error: 'Ruta no encontrada' });
+});
 
 // Health check con logging estructurado
 app.get('/', (req: Request, res: Response) => {
