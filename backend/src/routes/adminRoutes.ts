@@ -243,4 +243,48 @@ router.get('/puntos', requireAdmin, async (req: AuthenticatedRequest, res: Respo
   }
 });
 
+// ── Listar servicios disponibles ──────────────────────────────────────────────
+/**
+ * Devuelve lista de servicios para selección en dashboard admin.
+ * @route GET /servicios
+ * @access Admin only
+ */
+router.get('/servicios', requireAdmin, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const servicios = await prisma.servicio.findMany({
+      select: {
+        id: true,
+        nombre: true,
+      },
+      orderBy: { nombre: 'asc' },
+    });
+
+    const outputSchema = z.array(
+      z.object({
+        id: z.string().uuid(),
+        nombre: z.string().min(1),
+      })
+    );
+
+    const parsed = outputSchema.safeParse(servicios);
+    if (!parsed.success) {
+      logger.warn({ issues: parsed.error.issues, admin: req.user?.email }, '⚠️ Datos de servicios inválidos');
+      throw new ValidationError('Datos de servicios inconsistentes');
+    }
+
+    logger.info(
+      {
+        adminEmail: req.user?.email,
+        count: parsed.data.length,
+        path: req.path,
+      },
+      '✅ Lista de servicios devuelta'
+    );
+
+    res.json(parsed.data);
+  } catch (err: unknown) {
+    next(err);
+  }
+});
+
 export default router;
