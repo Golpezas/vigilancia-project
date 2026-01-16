@@ -52,9 +52,11 @@ export class ReporteService {
       orderBy: { timestamp: 'asc' },
     });
 
+    // Después (mejor UX y API más amigable)
     if (!registros.length) {
-      logger.info({ filtros }, 'No se encontraron registros para los filtros');
-      throw new ValidationError('No hay registros para los filtros proporcionados');
+      logger.info({ filtros }, 'ℹ️ No se encontraron registros para los filtros - retornando vacío');
+      return {}; // Retorna objeto vacío (RondasPorVigilador vacío)
+      // O si preferís array: return { message: 'No hay rondas registradas para este período' }
     }
 
     // Agrupación por vigilador
