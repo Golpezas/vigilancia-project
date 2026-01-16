@@ -8,6 +8,7 @@ import api from '../services/api';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto'; // Chart.js v5
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { z } from 'zod';
 import { parse } from 'date-fns'; // Para parsear formatos AR no-ISO
@@ -241,20 +242,65 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </div>
       )}
 
-      {/* Mapa */}
-      {!noData && (
-        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-bold text-white mb-4">Mapa de Geolocalizaciones</h3>
-          <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '400px', width: '100%' }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      {/* Mapa de Geolocalizaciones */}
+      <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+        <h3 className="text-xl font-bold text-white mb-4">Mapa de Últimas Geolocalizaciones</h3>
+        <div className="h-96 rounded-lg overflow-hidden border border-gray-700">
+          <MapContainer 
+            center={[-34.5467, -58.4596]} 
+            zoom={15} 
+            style={{ height: '100%', width: '100%' }}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            />
+
             {vigiladores.flatMap(v => 
-              data?.[v]?.filter(r => r.geo).map((reg, idx) => (
-                <Marker key={`${v}-${idx}`} position={[reg.geo!.lat, reg.geo!.long]} />
-              ))
+              data?.[v]
+                ?.filter(r => r.geo)
+                ?.map((reg, idx) => {
+                  // Ícono personalizado: círculo blanco con M mayúscula
+                  const customIcon = L.divIcon({
+                    className: 'custom-marker', // Clase para CSS custom (opcional)
+                    html: `
+                      <div style="
+                        background-color: white;
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 50%;
+                        border: 3px solid #1e40af; /* Azul fuerte como tu tema */
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: bold;
+                        font-size: 16px;
+                        color: #1e40af;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+                        text-align: center;
+                        line-height: 32px;
+                      ">
+                        M
+                      </div>
+                    `,
+                    iconSize: [32, 32],      // Tamaño del div
+                    iconAnchor: [16, 16],    // Centro del círculo (para que apunte bien al marcador)
+                    popupAnchor: [0, -32],   // Popup arriba del círculo
+                  });
+
+                  return (
+                    <Marker
+                      key={`${v}-${idx}`}
+                      position={[reg.geo!.lat, reg.geo!.long]}
+                      icon={customIcon}
+                      title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
+                    />
+                  );
+                })
             )}
           </MapContainer>
         </div>
-      )}
+      </div>
     </div>
   );
 };
