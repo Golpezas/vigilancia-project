@@ -2,18 +2,47 @@
 // Dashboard cliente para monitoreo de vigiladores - UI moderna, responsive
 // Mejores prácticas 2026: React Query v5 para fetching/caching, Tailwind v4, Chart.js v5, Leaflet para mapas
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto'; // Chart.js v5
-import L from 'leaflet'; // ← Import completo de Leaflet (necesario para L.divIcon)
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { z } from 'zod';
-import { parse } from 'date-fns';
+import { parse } from 'date-fns'; // Para parsear formatos AR no-ISO
 import { formatInTimeZone } from 'date-fns-tz';
 import { formatArgentina } from '../utils/dateUtils';
+
+interface ChartDataType {
+  labels: string[];
+  datasets: Array<{
+    label: string;
+    data: number[];
+    backgroundColor: string;
+    borderColor: string;
+    borderWidth: number;
+    borderRadius: number;
+  }>;
+}
+
+// Memoized Chart Component (evita re-mounts y bucles)
+const MemoizedBarChart = React.memo(({ data }: { data: ChartDataType }) => (
+  <div className="h-80">
+    <Bar
+      data={data}
+      options={{
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { color: '#9ca3af' } },
+          x: { ticks: { color: '#9ca3af' } },
+        },
+        plugins: { legend: { labels: { color: '#e5e7eb' } } },
+      }}
+    />
+  </div>
+));
 
 const TIMEZONE = 'America/Argentina/Buenos_Aires';
 
@@ -23,7 +52,7 @@ const RegistroSchema = z.object({
   timestamp: z.string().transform(val => {
     try {
       const parsed = parse(val, 'dd/MM/yyyy HH:mm:ss', new Date());
-      return parsed.toISOString();
+      return parsed.toISOString(); // Normaliza a ISO
     } catch {
       throw new Error('Formato de fecha inválido');
     }
@@ -54,7 +83,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   );
   const [selectedVigilador, setSelectedVigilador] = useState<string | null>(null);
 
-  // Fetch con React Query - caching agresivo para evitar refetch loop
+  // Fetch con React Query - caching alto, no retry en errores comunes
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
     queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigilador],
     queryFn: async () => {
@@ -72,38 +101,53 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
       }
       return parsed.data;
     },
-    staleTime: 1000 * 60 * 10, // 10 minutos de cache fresco
-    gcTime: 1000 * 60 * 30,    // 30 min antes de garbage collect
-    retry: false,              // No retry para evitar sobrecarga
+    staleTime: 1000 * 60 * 5, // 5 minutos de cache (reduce refetch innecesario)
+    gcTime: 1000 * 60 * 10,   // Garbage collect después de 10 min
+    retry: false,             // No retry para evitar bucles en errores
   });
 
+  // Cálculos derivados
   const vigiladores = Object.keys(data ?? {});
   const totalRondas = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.length, 0);
   const totalDelays = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.filter(r => r.alerta).length, 0);
 
+  // chartData con useMemo (dependencias estrictas)
   const chartData = useMemo(() => {
     if (!vigiladores.length) return null;
 
     return {
       labels: vigiladores,
-      datasets: [{
-        label: 'Rondas completadas',
-        data: vigiladores.map(v => data?.[v]?.length || 0),
-        backgroundColor: 'rgba(59, 130, 246, 0.7)',
-        borderColor: 'rgb(59, 130, 246)',
-        borderWidth: 1,
-        borderRadius: 6,
-      }],
+      datasets: [
+        {
+          label: 'Rondas completadas',
+          data: vigiladores.map(v => data?.[v]?.length || 0),
+          backgroundColor: 'rgba(59, 130, 246, 0.7)',
+          borderColor: 'rgb(59, 130, 246)',
+          borderWidth: 1,
+          borderRadius: 6,
+        },
+      ],
     };
-  }, [data, vigiladores]);
+  }, [data, vigiladores]); // Solo recalcula si data o vigiladores cambian
 
-  // Handler memoizado para evitar recreación en cada render
-  const handleDateChange = useCallback((setter: React.Dispatch<React.SetStateAction<string>>) => 
-    (e: React.ChangeEvent<HTMLInputElement>) => setter(e.target.value), 
-  []);
+  // Render condicional (solo JSX, sin hooks)
+  if (isLoading) {
+    return <div className="text-center py-10 text-gray-400 animate-pulse">Cargando reportes...</div>;
+  }
 
-  if (isLoading) return <div className="text-center py-10 text-gray-400 animate-pulse">Cargando reportes...</div>;
-  if (error) return <div className="text-red-500 text-center py-10">Error: {error.message}</div>;
+  if (error) {
+    return (
+      <div className="text-center py-12 text-red-400 bg-red-900/30 rounded-lg p-6">
+        Error al cargar reportes: {error.message}
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
 
   const noData = totalRondas === 0;
 
@@ -116,7 +160,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
           <input
             type="date"
             value={fechaDesde}
-            onChange={handleDateChange(setFechaDesde)}
+            onChange={(e) => setFechaDesde(e.target.value)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           />
         </label>
@@ -125,7 +169,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
           <input
             type="date"
             value={fechaHasta}
-            onChange={handleDateChange(setFechaHasta)}
+            onChange={(e) => setFechaHasta(e.target.value)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           />
         </label>
@@ -154,7 +198,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* Tabla con más espacio */}
       <div className="overflow-x-auto">
         <table className="w-full bg-gray-800 rounded-lg overflow-hidden shadow-md">
           <thead className="bg-blue-600 text-white">
@@ -189,73 +233,26 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </table>
       </div>
 
-      {/* Gráfico */}
+      {/* Gráfico - solo si hay data y chartData existe */}
       {!noData && chartData && vigiladores.length > 0 && (
-        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+        <div className="bg-gray-800 p-6 rounded-lg shadow-md" key="chart-container">
           <h3 className="text-xl font-bold text-white mb-4">Rondas por Vigilador</h3>
-          <div className="h-80">
-            <Bar
-              data={chartData}
-              options={{
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { y: { beginAtZero: true, ticks: { color: '#9ca3af' } }, x: { ticks: { color: '#9ca3af' } } },
-                plugins: { legend: { labels: { color: '#e5e7eb' } } },
-              }}
-            />
-          </div>
+          <MemoizedBarChart data={chartData} />
         </div>
       )}
 
-      {/* Mapa con ícono personalizado seguro */}
+      {/* Mapa */}
       {!noData && (
         <div className="bg-gray-800 p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-bold text-white mb-4">Mapa de Últimas Geolocalizaciones</h3>
-          <div className="h-96 rounded-lg overflow-hidden border border-gray-700">
-            <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '100%', width: '100%' }}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-              {vigiladores.flatMap(v =>
-                data?.[v]
-                  ?.filter(r => r.geo)
-                  ?.map((reg, idx) => {
-                    // Ícono personalizado: círculo blanco con M (fallback si falla)
-                    const customIcon = L.divIcon({
-                      className: 'custom-marker',
-                      html: `
-                        <div style="
-                          background-color: white;
-                          width: 36px;
-                          height: 36px;
-                          border-radius: 50%;
-                          border: 3px solid #1e40af;
-                          display: flex;
-                          align-items: center;
-                          justify-content: center;
-                          font-weight: bold;
-                          font-size: 18px;
-                          color: #1e40af;
-                          box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-                        ">
-                          M
-                        </div>
-                      `,
-                      iconSize: [36, 36],
-                      iconAnchor: [18, 18], // Centro exacto
-                    });
-
-                    return (
-                      <Marker
-                        key={`${v}-${idx}`}
-                        position={[reg.geo!.lat, reg.geo!.long]}
-                        icon={customIcon}
-                        title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
-                      />
-                    );
-                  })
-              )}
-            </MapContainer>
-          </div>
+          <h3 className="text-xl font-bold text-white mb-4">Mapa de Geolocalizaciones</h3>
+          <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '400px', width: '100%' }}>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            {vigiladores.flatMap(v => 
+              data?.[v]?.filter(r => r.geo).map((reg, idx) => (
+                <Marker key={`${v}-${idx}`} position={[reg.geo!.lat, reg.geo!.long]} />
+              ))
+            )}
+          </MapContainer>
         </div>
       )}
     </div>
