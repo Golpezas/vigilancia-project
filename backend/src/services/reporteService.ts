@@ -73,8 +73,8 @@ export class ReporteService {
     });
 
     // Detección de delays (mejorado: evita crear new Date innecesariamente)
-    const MAX_TIEMPO_ENTRE_PUNTOS = 15 * 60 * 1000; // 15 minutos en ms
-    Object.values(rondasPorVigilador).forEach(ronda => {
+    const MAX_TIEMPO_ENTRE_PUNTOS = 60 * 60 * 1000; // 1 hora en ms (cambia según norma del cliente)
+    Object.entries(rondasPorVigilador).forEach(([vigiladorId, ronda]) => {
       for (let i = 1; i < ronda.length; i++) {
         const prevTime = new Date(ronda[i - 1].timestamp).getTime();
         const currTime = new Date(ronda[i].timestamp).getTime();
@@ -85,12 +85,18 @@ export class ReporteService {
       }
     });
 
+    // Total delays para stats (si querés agregar al response)
+    const totalDelays = Object.values(rondasPorVigilador).reduce(
+      (acc, ronda) => acc + ronda.filter(r => r.alerta).length,
+      0
+    );
+
     logger.info(
       { filtros, totalRegistros: registros.length, vigiladores: Object.keys(rondasPorVigilador).length },
       '✅ Reporte de rondas generado exitosamente'
     );
 
-    return rondasPorVigilador;
+    return { rondas: rondasPorVigilador, totalDelays };
   }
 
   // TODO: Agregar método para alertas en tiempo real (e.g., cron job o webhook)
