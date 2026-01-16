@@ -14,6 +14,36 @@ import { parse } from 'date-fns'; // Para parsear formatos AR no-ISO
 import { formatInTimeZone } from 'date-fns-tz';
 import { formatArgentina } from '../utils/dateUtils';
 
+interface ChartDataType {
+  labels: string[];
+  datasets: Array<{
+    label: string;
+    data: number[];
+    backgroundColor: string;
+    borderColor: string;
+    borderWidth: number;
+    borderRadius: number;
+  }>;
+}
+
+// Memoized Chart Component (evita re-mounts y bucles)
+const MemoizedBarChart = React.memo(({ data }: { data: ChartDataType }) => (
+  <div className="h-80">
+    <Bar
+      data={data}
+      options={{
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, ticks: { color: '#9ca3af' } },
+          x: { ticks: { color: '#9ca3af' } },
+        },
+        plugins: { legend: { labels: { color: '#e5e7eb' } } },
+      }}
+    />
+  </div>
+));
+
 const TIMEZONE = 'America/Argentina/Buenos_Aires';
 
 // Schema Zod actualizado: transforma timestamp AR a ISO
@@ -41,7 +71,6 @@ interface DashboardProps {
 }
 
 const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
-  // ── Todos los hooks al inicio del componente (regla de React Hooks) ──
   const today = new Date();
   const defaultDesde = new Date(today);
   defaultDesde.setDate(today.getDate() - 7);
@@ -54,6 +83,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   );
   const [selectedVigilador, setSelectedVigilador] = useState<string | null>(null);
 
+  // Fetch con React Query - caching alto, no retry en errores comunes
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
     queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigilador],
     queryFn: async () => {
@@ -71,16 +101,17 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
       }
       return parsed.data;
     },
-    retry: false, // Evita bucle infinito
+    staleTime: 1000 * 60 * 5, // 5 minutos de cache (reduce refetch innecesario)
+    gcTime: 1000 * 60 * 10,   // Garbage collect después de 10 min
+    retry: false,             // No retry para evitar bucles en errores
   });
 
-  // ── Cálculos derivados (después de hooks, pero antes del return) ──
+  // Cálculos derivados
   const vigiladores = Object.keys(data ?? {});
-
   const totalRondas = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.length, 0);
   const totalDelays = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.filter(r => r.alerta).length, 0);
 
-  // chartData con useMemo (siempre llamado, pero puede retornar null si no hay data)
+  // chartData con useMemo (dependencias estrictas)
   const chartData = useMemo(() => {
     if (!vigiladores.length) return null;
 
@@ -97,18 +128,28 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         },
       ],
     };
-  }, [data, vigiladores]);
+  }, [data, vigiladores]); // Solo recalcula si data o vigiladores cambian
 
-  // ── Render condicional (solo JSX, nunca hooks aquí) ──
+  // Render condicional (solo JSX, sin hooks)
   if (isLoading) {
-    return <div className="text-center py-10 text-gray-400">Cargando reportes...</div>;
+    return <div className="text-center py-10 text-gray-400 animate-pulse">Cargando reportes...</div>;
   }
 
   if (error) {
-    return <div className="text-red-500 text-center py-10">Error: {error.message}</div>;
+    return (
+      <div className="text-center py-12 text-red-400 bg-red-900/30 rounded-lg p-6">
+        Error al cargar reportes: {error.message}
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-white"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
   }
 
-  //const noData = totalRondas === 0;
+  const noData = totalRondas === 0;
 
   return (
     <div className="space-y-8">
@@ -192,39 +233,28 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </table>
       </div>
 
-      {/* Gráfico - solo render si existe chartData */}
-      {chartData && vigiladores.length > 0 && (
-        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+      {/* Gráfico - solo si hay data y chartData existe */}
+      {!noData && chartData && vigiladores.length > 0 && (
+        <div className="bg-gray-800 p-6 rounded-lg shadow-md" key="chart-container">
           <h3 className="text-xl font-bold text-white mb-4">Rondas por Vigilador</h3>
-          <div className="h-80">
-            <Bar
-              data={chartData}
-              options={{
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                  y: { beginAtZero: true, ticks: { color: '#9ca3af' } },
-                  x: { ticks: { color: '#9ca3af' } },
-                },
-                plugins: { legend: { labels: { color: '#e5e7eb' } } },
-              }}
-            />
-          </div>
+          <MemoizedBarChart data={chartData} />
         </div>
       )}
 
       {/* Mapa */}
-      <div className="bg-gray-800 p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-bold text-white mb-4">Mapa de Geolocalizaciones</h3>
-        <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '400px', width: '100%' }}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {vigiladores.flatMap(v => 
-            data?.[v]?.filter(r => r.geo).map((reg, idx) => (
-              <Marker key={`${v}-${idx}`} position={[reg.geo!.lat, reg.geo!.long]} />
-            ))
-          )}
-        </MapContainer>
-      </div>
+      {!noData && (
+        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+          <h3 className="text-xl font-bold text-white mb-4">Mapa de Geolocalizaciones</h3>
+          <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '400px', width: '100%' }}>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            {vigiladores.flatMap(v => 
+              data?.[v]?.filter(r => r.geo).map((reg, idx) => (
+                <Marker key={`${v}-${idx}`} position={[reg.geo!.lat, reg.geo!.long]} />
+              ))
+            )}
+          </MapContainer>
+        </div>
+      )}
     </div>
   );
 };
