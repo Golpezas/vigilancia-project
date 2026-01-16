@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto'; // Chart.js v5
+import L from 'leaflet'; // Import completo para custom icons
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { z } from 'zod';
@@ -127,7 +128,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
           borderRadius: 6,
         },
       ],
-    };
+    } as ChartDataType;
   }, [data, vigiladores]); // Solo recalcula si data o vigiladores cambian
 
   // Render condicional (solo JSX, sin hooks)
@@ -241,18 +242,34 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </div>
       )}
 
-      {/* Mapa */}
+      {/* Mapa con íconos personalizados */}
       {!noData && (
         <div className="bg-gray-800 p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-bold text-white mb-4">Mapa de Geolocalizaciones</h3>
-          <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '400px', width: '100%' }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {vigiladores.flatMap(v => 
-              data?.[v]?.filter(r => r.geo).map((reg, idx) => (
-                <Marker key={`${v}-${idx}`} position={[reg.geo!.lat, reg.geo!.long]} />
-              ))
-            )}
-          </MapContainer>
+          <h3 className="text-xl font-bold text-white mb-4">Mapa de Últimas Geolocalizaciones</h3>
+          <div className="h-96 rounded-lg overflow-hidden border border-gray-700">
+            <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '100%', width: '100%' }}>
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              {vigiladores.flatMap(v => 
+                data?.[v]?.filter(r => r.geo).map((reg, idx) => {
+                  const customIcon = L.divIcon({
+                    className: 'custom-marker',
+                    html: `<div style="background-color: white; width: 36px; height: 36px; border-radius: 50%; border: 3px solid #1e40af; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; color: #1e40af; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">M</div>`,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 18],
+                  });
+
+                  return (
+                    <Marker
+                      key={`${v}-${idx}`}
+                      position={[reg.geo!.lat, reg.geo!.long]}
+                      icon={customIcon}
+                      title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
+                    />
+                  );
+                })
+              )}
+            </MapContainer>
+          </div>
         </div>
       )}
     </div>
