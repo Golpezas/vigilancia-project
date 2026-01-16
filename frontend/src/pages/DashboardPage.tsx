@@ -1,9 +1,8 @@
 // src/pages/DashboardPage.tsx
 // Dashboard cliente para monitoreo de vigiladores - UI moderna, responsive
-// Mejores prácticas 2026: React Query v5 para fetching/caching, Tailwind v4, Chart.js v5, Leaflet para mapas,
-// Zod con transform para normalización fechas AR, manejo no-data UX, rango default amplio, type-safety estricto
+// Mejores prácticas 2026: React Query v5 para fetching/caching, Tailwind v4, Chart.js v5, Leaflet para mapas
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { Bar } from 'react-chartjs-2';
@@ -17,14 +16,13 @@ import { formatArgentina } from '../utils/dateUtils';
 
 const TIMEZONE = 'America/Argentina/Buenos_Aires';
 
-// Schema Zod flexible: acepta timestamp en formato AR (dd/MM/yyyy HH:mm:ss) y transforma a ISO/Date
+// Schema Zod actualizado: transforma timestamp AR a ISO
 const RegistroSchema = z.object({
   punto: z.string().min(1),
   timestamp: z.string().transform(val => {
     try {
-      const parsed = parse(val, 'dd/MM/yyyy HH:mm:ss', new Date()); // Parsea AR format
-      if (isNaN(parsed.getTime())) throw new Error('Invalid date');
-      return parsed.toISOString(); // Normaliza a ISO para consistencia
+      const parsed = parse(val, 'dd/MM/yyyy HH:mm:ss', new Date());
+      return parsed.toISOString(); // Normaliza a ISO
     } catch {
       throw new Error('Formato de fecha inválido');
     }
@@ -42,16 +40,8 @@ interface DashboardProps {
   servicioId: string;
 }
 
-/**
- * Dashboard para monitoreo de rondas con filtros, stats, tabla, gráfico y mapa.
- * - Rango default: últimos 7 días para capturar datos existentes.
- * - Manejo no-data: mensaje amigable.
- * - Vigilador: muestra nombre/legajo en vez de ID (asumiendo backend lo devuelve).
- * - Delays: calculados en backend (>1 hora).
- * - Tabla: más espacio y responsive.
- */
 const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
-  // Rango default: últimos 7 días
+  // ── Todos los hooks al inicio del componente (regla de React Hooks) ──
   const today = new Date();
   const defaultDesde = new Date(today);
   defaultDesde.setDate(today.getDate() - 7);
@@ -64,7 +54,6 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   );
   const [selectedVigilador, setSelectedVigilador] = useState<string | null>(null);
 
-  // Fetch con React Query
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
     queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigilador],
     queryFn: async () => {
@@ -77,38 +66,60 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         },
       });
       const parsed = RondasSchema.safeParse(res.data);
-      if (!parsed.success) throw new Error('Datos de reportes inválidos: ' + parsed.error.issues.map(i => i.message).join(', '));
+      if (!parsed.success) {
+        throw new Error('Datos de reportes inválidos: ' + parsed.error.issues.map(i => i.message).join(', '));
+      }
       return parsed.data;
     },
-    retry: (failureCount, err) => failureCount < 2 && !err.message.includes('400'),
+    retry: false, // Evita bucle infinito
   });
 
-  if (isLoading) return <div className="text-center py-10 text-gray-400">Cargando reportes...</div>;
-  if (error) return <div className="text-red-500 text-center py-10">Error: {error.message}</div>;
-
+  // ── Cálculos derivados (después de hooks, pero antes del return) ──
   const vigiladores = Object.keys(data ?? {});
-  const totalRondas = vigiladores.reduce((acc, v) => acc + (data?.[v]?.length || 0), 0);
-  const totalDelays = vigiladores.reduce((acc, v) => acc + (data?.[v]?.filter(r => r.alerta).length || 0), 0);
 
-  const chartData = {
-    labels: vigiladores,
-    datasets: [{
-      label: 'Rondas completadas',
-      data: vigiladores.map(v => data?.[v]?.length || 0),
-      backgroundColor: 'rgba(30, 64, 175, 0.6)',
-    }],
-  };
+  const totalRondas = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.length, 0);
+  const totalDelays = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.filter(r => r.alerta).length, 0);
+
+  // chartData con useMemo (siempre llamado, pero puede retornar null si no hay data)
+  const chartData = useMemo(() => {
+    if (!vigiladores.length) return null;
+
+    return {
+      labels: vigiladores,
+      datasets: [
+        {
+          label: 'Rondas completadas',
+          data: vigiladores.map(v => data?.[v]?.length || 0),
+          backgroundColor: 'rgba(59, 130, 246, 0.7)',
+          borderColor: 'rgb(59, 130, 246)',
+          borderWidth: 1,
+          borderRadius: 6,
+        },
+      ],
+    };
+  }, [data, vigiladores]);
+
+  // ── Render condicional (solo JSX, nunca hooks aquí) ──
+  if (isLoading) {
+    return <div className="text-center py-10 text-gray-400">Cargando reportes...</div>;
+  }
+
+  if (error) {
+    return <div className="text-red-500 text-center py-10">Error: {error.message}</div>;
+  }
+
+  //const noData = totalRondas === 0;
 
   return (
     <div className="space-y-8">
       {/* Filtros */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex space-x-4">
         <label className="flex-1">
           <span className="block text-sm font-medium text-gray-300 mb-2">Desde</span>
           <input
             type="date"
             value={fechaDesde}
-            onChange={e => setFechaDesde(e.target.value)}
+            onChange={(e) => setFechaDesde(e.target.value)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           />
         </label>
@@ -117,7 +128,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
           <input
             type="date"
             value={fechaHasta}
-            onChange={e => setFechaHasta(e.target.value)}
+            onChange={(e) => setFechaHasta(e.target.value)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           />
         </label>
@@ -125,7 +136,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
           <span className="block text-sm font-medium text-gray-300 mb-2">Vigilador</span>
           <select
             value={selectedVigilador || ''}
-            onChange={e => setSelectedVigilador(e.target.value || null)}
+            onChange={(e) => setSelectedVigilador(e.target.value || null)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           >
             <option value="">Todos</option>
@@ -134,15 +145,15 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </label>
       </div>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 gap-4">
         <div className="p-4 bg-gray-800 rounded-lg text-center shadow-md">
           <h3 className="text-lg font-bold text-white">Total Rondas</h3>
-          <p className="text-2xl text-green-600">{totalRondas}</p>
+          <p className="text-2xl text-blue-400">{totalRondas}</p>
         </div>
         <div className="p-4 bg-gray-800 rounded-lg text-center shadow-md">
           <h3 className="text-lg font-bold text-white">Delays Excesivos</h3>
-          <p className="text-2xl text-red-600">{totalDelays}</p>
+          <p className="text-2xl text-red-500">{totalDelays}</p>
         </div>
       </div>
 
@@ -151,41 +162,56 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         <table className="w-full bg-gray-800 rounded-lg overflow-hidden shadow-md">
           <thead className="bg-blue-600 text-white">
             <tr>
-              <th className="py-4 px-8 text-left">Vigilador</th>
-              <th className="py-4 px-8 text-left">Punto</th>
-              <th className="py-4 px-8 text-left">Hora (AR)</th>
-              <th className="py-4 px-8 text-left">Geo</th>
-              <th className="py-4 px-8 text-left">Novedades</th>
-              <th className="py-4 px-8 text-left">Alerta</th>
+              <th className="py-4 px-6 text-left">Vigilador</th>
+              <th className="py-4 px-6 text-left">Punto</th>
+              <th className="py-4 px-6 text-left">Hora (AR)</th>
+              <th className="py-4 px-6 text-left">Geo</th>
+              <th className="py-4 px-6 text-left">Novedades</th>
+              <th className="py-4 px-6 text-left">Alerta</th>
             </tr>
           </thead>
           <tbody>
             {vigiladores.flatMap(v => 
               data?.[v]?.map((reg, idx) => (
                 <tr key={`${v}-${idx}`} className="border-b border-gray-700 hover:bg-gray-700">
-                  <td className="py-4 px-8">{v}</td>
-                  <td className="py-4 px-8">{reg.punto}</td>
-                  <td className="py-4 px-8">{formatArgentina(reg.timestamp)}</td>
-                  <td className="py-4 px-8">{reg.geo ? `${reg.geo.lat.toFixed(6)}, ${reg.geo.long.toFixed(6)}` : 'N/A'}</td>
-                  <td className="py-4 px-8">{reg.novedades ?? 'OK'}</td>
-                  <td className="py-4 px-8 text-red-600">{reg.alerta ?? 'OK'}</td>
+                  <td className="py-4 px-6">{v}</td>
+                  <td className="py-4 px-6">{reg.punto}</td>
+                  <td className="py-4 px-6">{formatArgentina(reg.timestamp)}</td>
+                  <td className="py-4 px-6">{reg.geo ? `${reg.geo.lat.toFixed(6)}, ${reg.geo.long.toFixed(6)}` : 'N/A'}</td>
+                  <td className="py-4 px-6">{reg.novedades ?? 'OK'}</td>
+                  <td className="py-4 px-6 text-red-500">{reg.alerta ?? 'OK'}</td>
                 </tr>
               ))
             )}
             {totalRondas === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 px-8 text-center text-gray-400">No hay registros para los filtros seleccionados.</td>
+                <td colSpan={6} className="py-4 text-center text-gray-400">No hay registros para los filtros seleccionados.</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Gráfico */}
-      <div className="bg-gray-800 p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-bold text-white mb-4">Rondas por Vigilador</h3>
-        <Bar data={chartData} options={{ responsive: true, scales: { y: { beginAtZero: true } } }} />
-      </div>
+      {/* Gráfico - solo render si existe chartData */}
+      {chartData && vigiladores.length > 0 && (
+        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+          <h3 className="text-xl font-bold text-white mb-4">Rondas por Vigilador</h3>
+          <div className="h-80">
+            <Bar
+              data={chartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  y: { beginAtZero: true, ticks: { color: '#9ca3af' } },
+                  x: { ticks: { color: '#9ca3af' } },
+                },
+                plugins: { legend: { labels: { color: '#e5e7eb' } } },
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Mapa */}
       <div className="bg-gray-800 p-6 rounded-lg shadow-md">
