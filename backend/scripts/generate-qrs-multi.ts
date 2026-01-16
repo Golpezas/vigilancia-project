@@ -1,16 +1,25 @@
 // scripts/generate-qrs-multi.ts
 // Generador inteligente de QR por servicio - Multi-cliente 2026
-// Mejores prácticas: Lee desde DB (Prisma), carpetas por servicio, filenames descriptivos
-// Type-safety total, logging claro, idempotente, reutilizable
+// Mejores prácticas: Prisma 7+ con adapter explícito, carga .env manual, type-safety total,
+// normalización estricta de datos, logging claro, idempotente, reutilizable
 
 import QRCode from 'qrcode';
 import fs from 'fs';
 import path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import 'dotenv/config'; // Carga automática de .env (necesario en scripts standalone)
 
-const prisma = new PrismaClient();
+// Inicialización segura de PrismaClient para scripts (Prisma 7+ requiere adapter explícito)
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL no está definida en .env');
+}
 
-const BASE_URL = 'https://vigilancia-project.vercel.app'; // ← Cambia si usas otro dominio en prod
+const adapter = new PrismaPg({ connectionString });
+const prisma = new PrismaClient({ adapter });
+
+const BASE_URL = 'https://vigilancia-project.vercel.app'; // Cambia si usas otro dominio en prod
 const ROOT_OUTPUT_DIR = path.join(process.cwd(), 'qrs-multi');
 
 const qrOptions = {
@@ -28,14 +37,28 @@ async function main() {
   console.log(`📁 Carpeta raíz: ${path.resolve(ROOT_OUTPUT_DIR)}\n`);
 
   // Obtener todos los servicios con sus puntos ordenados
-  const servicios = await prisma.servicio.findMany({
+  const serviciosCrudos = await prisma.servicio.findMany({
     include: {
       puntos: {
         include: { punto: true },
         orderBy: { punto: { id: 'asc' } },
       },
     },
-  }) as Array<{ id: string; nombre: string; puntos: Array<{ punto: { id: string; nombre: string } | null }> }>;
+  });
+
+  // Normalizamos los IDs a string (estándar moderno para URLs y QR)
+  const servicios = serviciosCrudos.map(servicio => ({
+    id: servicio.id,
+    nombre: servicio.nombre,
+    puntos: servicio.puntos.map(asignacion => ({
+      punto: asignacion.punto
+        ? {
+            id: asignacion.punto.id.toString(),
+            nombre: asignacion.punto.nombre,
+          }
+        : null,
+    })),
+  }));
 
   if (servicios.length === 0) {
     console.warn('⚠️ No hay servicios en la base de datos');
@@ -48,14 +71,19 @@ async function main() {
     const serviceDirName = servicio.nombre.replace(/[^a-zA-Z0-9]/g, '_');
     const serviceOutputDir = path.join(ROOT_OUTPUT_DIR, serviceDirName);
 
+    // Idempotente: crea carpeta si no existe
     if (!fs.existsSync(serviceOutputDir)) {
       fs.mkdirSync(serviceOutputDir, { recursive: true });
     }
 
-    // Validación y filtrado de puntos válidos: Mapea a punto, filtra nulos y elimina duplicados por ID (best practice: data normalization early)
-    // Usa Set para filtrado eficiente de duplicados (O(n) time, mejor que findIndex en arrays grandes)
-    const puntosMap = new Map(servicio.puntos.map(sp => [sp.punto?.id, sp.punto]));
-    const puntosValidos = Array.from(puntosMap.values()).filter(p => p != null); // Filtra undefined/null
+    // Normalización y filtrado de puntos válidos (evita nulls y duplicados por ID)
+    const puntosMap = new Map<string, { id: string; nombre: string } | null>(
+      servicio.puntos.map(sp => [sp.punto?.id ?? '', sp.punto])
+    );
+
+    const puntosValidos = Array.from(puntosMap.values()).filter(
+      (p): p is { id: string; nombre: string } => p !== null
+    );
 
     console.log(`📂 Generando QR para servicio: "${servicio.nombre}" (${puntosValidos.length} puntos válidos)`);
 
@@ -65,10 +93,10 @@ async function main() {
     }
 
     for (const punto of puntosValidos) {
-      const url = `${BASE_URL}/punto/${punto.id}`; // Formato moderno y limpio (sin query params para IDs)
+      const url = `${BASE_URL}/punto/${punto.id}`; // Formato limpio y moderno
 
       const safePuntoName = punto.nombre.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `${punto.id.toString().padStart(2, '0')}_${safePuntoName}.png`;
+      const fileName = `${punto.id.padStart(3, '0')}_${safePuntoName}.png`; // padStart 3 dígitos para orden
       const filePath = path.join(serviceOutputDir, fileName);
 
       try {
@@ -76,9 +104,10 @@ async function main() {
         console.log(`   ✅ ${fileName} → ${url}`);
         totalGenerated++;
       } catch (err) {
-        console.error(`   ❌ Error en punto ${punto.id}:`, err);
+        console.error(`   ❌ Error generando QR para punto ${punto.id} (${punto.nombre}):`, err);
       }
     }
+
     console.log('');
   }
 
@@ -90,7 +119,7 @@ async function main() {
 
 main()
   .catch((e) => {
-    console.error('❌ Error crítico:', e);
+    console.error('❌ Error crítico durante generación:', e);
     process.exit(1);
   })
   .finally(async () => {

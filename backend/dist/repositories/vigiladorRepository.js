@@ -7,7 +7,16 @@ exports.VigiladorRepository = exports.prisma = void 0;
 const client_1 = require("@prisma/client");
 const logger_1 = __importDefault(require("../utils/logger"));
 const errorHandler_1 = require("../utils/errorHandler");
+const pg_1 = require("pg");
+const adapter_pg_1 = require("@prisma/adapter-pg");
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+    throw new Error('DATABASE_URL no configurado en .env');
+}
+const pool = new pg_1.Pool({ connectionString });
+const adapter = new adapter_pg_1.PrismaPg(pool);
 exports.prisma = new client_1.PrismaClient({
+    adapter,
     log: ['query', 'info', 'warn', 'error'],
 });
 class VigiladorRepository {

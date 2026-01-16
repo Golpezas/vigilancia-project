@@ -11,21 +11,22 @@ const dateUtils_1 = require("../utils/dateUtils");
 const errorHandler_1 = require("../utils/errorHandler");
 const ReporteFiltroSchema = zod_1.z.object({
     servicioId: zod_1.z.string().uuid(),
-    fechaDesde: zod_1.z.string().datetime().optional(),
-    fechaHasta: zod_1.z.string().datetime().optional(),
+    fechaDesde: zod_1.z.string().datetime({ offset: true }).optional().transform(val => val ? new Date(val) : undefined),
+    fechaHasta: zod_1.z.string().datetime({ offset: true }).optional().transform(val => val ? new Date(val) : undefined),
     vigiladorId: zod_1.z.string().uuid().optional(),
 });
 class ReporteService {
     static async getReportesRondas(filtros) {
-        const parsed = ReporteFiltroSchema.parse(filtros);
+        const { servicioId, fechaDesde, fechaHasta, vigiladorId } = filtros;
+        logger_1.default.info({ servicioId, fechaDesde: fechaDesde?.toISOString(), fechaHasta: fechaHasta?.toISOString(), vigiladorId }, '📊 Iniciando generación de reporte de rondas');
         const registros = await vigiladorRepository_1.prisma.registro.findMany({
             where: {
-                servicioId: parsed.servicioId,
+                servicioId,
                 timestamp: {
-                    gte: parsed.fechaDesde ? new Date(parsed.fechaDesde) : undefined,
-                    lte: parsed.fechaHasta ? new Date(parsed.fechaHasta) : undefined,
+                    gte: fechaDesde,
+                    lte: fechaHasta,
                 },
-                vigiladorId: parsed.vigiladorId,
+                vigiladorId,
             },
             include: {
                 vigilador: true,
@@ -34,10 +35,11 @@ class ReporteService {
             orderBy: { timestamp: 'asc' },
         });
         if (!registros.length) {
+            logger_1.default.info({ filtros }, 'No se encontraron registros para los filtros');
             throw new errorHandler_1.ValidationError('No hay registros para los filtros proporcionados');
         }
         const rondasPorVigilador = {};
-        registros.forEach((reg) => {
+        registros.forEach(reg => {
             const key = reg.vigiladorId;
             if (!rondasPorVigilador[key])
                 rondasPorVigilador[key] = [];
@@ -49,15 +51,17 @@ class ReporteService {
             });
         });
         const MAX_TIEMPO_ENTRE_PUNTOS = 15 * 60 * 1000;
-        Object.entries(rondasPorVigilador).forEach(([vigiladorId, ronda]) => {
+        Object.values(rondasPorVigilador).forEach(ronda => {
             for (let i = 1; i < ronda.length; i++) {
-                const diff = new Date(ronda[i].timestamp).getTime() - new Date(ronda[i - 1].timestamp).getTime();
+                const prevTime = new Date(ronda[i - 1].timestamp).getTime();
+                const currTime = new Date(ronda[i].timestamp).getTime();
+                const diff = currTime - prevTime;
                 if (diff > MAX_TIEMPO_ENTRE_PUNTOS) {
                     ronda[i].alerta = `Delay excesivo: ${Math.round(diff / 60000)} min`;
                 }
             }
         });
-        logger_1.default.info({ filtros: parsed, count: registros.length }, '✅ Reporte generado');
+        logger_1.default.info({ filtros, totalRegistros: registros.length, vigiladores: Object.keys(rondasPorVigilador).length }, '✅ Reporte de rondas generado exitosamente');
         return rondasPorVigilador;
     }
 }

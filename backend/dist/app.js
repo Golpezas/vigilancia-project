@@ -11,6 +11,7 @@ const errorHandler_1 = require("./utils/errorHandler");
 const logger_1 = __importDefault(require("./utils/logger"));
 const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
+const reporteRoutes_1 = __importDefault(require("./routes/reporteRoutes"));
 const app = (0, express_1.default)();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.use((0, helmet_1.default)());
@@ -22,6 +23,11 @@ app.use(express_1.default.json({ limit: '10mb' }));
 app.use('/api', vigiladorRoutes_1.default);
 app.use('/api/auth', authRoutes_1.default);
 app.use('/api/admin', adminRoutes_1.default);
+app.use('/api/reportes', reporteRoutes_1.default);
+app.use('*', (req, res) => {
+    logger_1.default.warn({ path: req.path, method: req.method, query: req.query }, '⚠️ Ruta no encontrada');
+    res.status(404).json({ error: 'Ruta no encontrada' });
+});
 app.get('/', (req, res) => {
     const response = {
         message: 'API Vigilancia QR - Backend corriendo correctamente',
