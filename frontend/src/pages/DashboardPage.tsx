@@ -1,14 +1,16 @@
 // src/pages/DashboardPage.tsx
 // Dashboard cliente para monitoreo de vigiladores - UI moderna, responsive
-// Mejores prácticas 2026: React Query v5 para fetching/caching, Tailwind v4, Chart.js v5, Leaflet para mapas
+// Mejores prácticas 2026: React Query v5 para fetching/caching, Tailwind v4, Chart.js v5, Leaflet para mapas,
+// useMap hook para type-safety en Leaflet (evita internals frágiles y any), invalidateSize en useEffect con delay mínimo,
+// contenedor con height explícita y verificación de visibilidad, logs estructurados para depuración práctica
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { Bar } from 'react-chartjs-2';
 import 'chart.js/auto'; // Chart.js v5
-import L from 'leaflet'; // Import completo para custom icons
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet'; // Import completo para custom icons y tipado L.Map
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'; // ← Agrega useMap
 import 'leaflet/dist/leaflet.css';
 import { z } from 'zod';
 import { parse } from 'date-fns'; // Para parsear formatos AR no-ISO
@@ -242,81 +244,115 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         </div>
       )}
 
-      {/* Mapa de Geolocalizaciones */}
+      {/* Mapa de Últimas Geolocalizaciones */}
       <div className="bg-gray-800 p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-bold text-white mb-4">Mapa de Últimas Geolocalizaciones</h3>
-        <div className="h-96 rounded-lg overflow-hidden border border-gray-700 relative">
-          
-          <MapContainer 
-            center={[-34.5467, -58.4596]} 
-            zoom={15} 
+        <div className="relative h-96 rounded-lg overflow-hidden border border-gray-700 bg-gray-900">
+          <MapContainer
+            center={[-34.5467, -58.4596]}
+            zoom={15}
             style={{ height: '100%', width: '100%' }}
-            whenReady={() => console.log('[MAPA] Mapa creado exitosamente')}
+            className="absolute inset-0"
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-            {vigiladores.flatMap(v => {
-              // Log por vigilador: ¿Qué registros tiene cada uno?
-              const registrosV = data?.[v] ?? [];
-              console.log(`[MAPA] Vigilador "${v}": ${registrosV.length} registros totales`);
+            {/* Resizer type-safe: invalida size al montar, sin querySelector ni any */}
+            <MapResizer />
 
-              return registrosV
-                .filter(r => {
-                  const tieneGeo = !!r.geo;
-                  console.log(`[MAPA] Registro ${v} - ${r.punto}: ¿tiene geo? ${tieneGeo}`, r.geo);
-                  return tieneGeo;
-                })
-                .map((reg, idx) => {
-                  console.log(`[MAPA] Creando Marker ${idx} para "${v}" en punto "${reg.punto}"`, {
-                    lat: reg.geo!.lat,
-                    lng: reg.geo!.long,
-                    timestamp: reg.timestamp,
-                  });
-
-                  // Ícono personalizado
-                  const customIcon = L.divIcon({
-                    className: 'bg-transparent',
-                    html: `
-                      <div style="
-                        background-color: white;
-                        width: 38px;
-                        height: 38px;
-                        border-radius: 50%;
-                        border: 4px solid #1e40af;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-weight: bold;
-                        font-size: 20px;
-                        color: #1e40af;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-                        text-align: center;
-                        line-height: 38px;
-                      ">
-                        M
-                      </div>
-                    `,
-                    iconSize: [38, 38],
-                    iconAnchor: [19, 19],
-                  });
-
-                  console.log(`[MAPA] Ícono custom creado para marker ${idx}`);
-
-                  return (
-                    <Marker
-                      key={`${v}-${idx}`}
-                      position={[reg.geo!.lat, reg.geo!.long]}
-                      icon={customIcon}
-                      title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
-                    />
-                  );
+            {vigiladores.flatMap(v => 
+              data?.[v]?.filter(r => r.geo).map((reg, idx) => {
+                console.log(`[MAPA DEBUG] Creando marker ${idx} para ${v} en ${reg.punto}`, {
+                  lat: reg.geo!.lat,
+                  lng: reg.geo!.long,
                 });
-            })}
+
+                const customIcon = L.divIcon({
+                  className: 'bg-transparent',
+                  html: `
+                    <div style="
+                      background-color: white;
+                      width: 38px;
+                      height: 38px;
+                      border-radius: 50%;
+                      border: 4px solid #1e40af;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      font-weight: bold;
+                      font-size: 20px;
+                      color: #1e40af;
+                      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                      text-align: center;
+                      line-height: 38px;
+                    ">
+                      M
+                    </div>
+                  `,
+                  iconSize: [38, 38],
+                  iconAnchor: [19, 19],
+                });
+
+                console.log(`[MAPA DEBUG] Ícono custom creado para marker ${idx}`);
+
+                return (
+                  <Marker
+                    key={`${v}-${idx}`}
+                    position={[reg.geo!.lat, reg.geo!.long]}
+                    icon={customIcon}
+                    title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
+                  />
+                );
+              })
+            )}
           </MapContainer>
+
+          {/* Fallback si no hay marcadores */}
+          {vigiladores.reduce((acc, v) => acc + (data?.[v]?.filter(r => r.geo).length || 0), 0) === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-900/80">
+              No hay geolocalizaciones registradas para mostrar en el mapa
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
+};
+
+// Componente hijo para resize: type-safe con useMap (best practice oficial react-leaflet v4+)
+const MapResizer: React.FC = () => {
+  const map = useMap(); // ← Obtiene L.Map directamente, type-safe sin any
+
+  useEffect(() => {
+    console.log('[MAPA DEBUG] Mapa montado - verificando contenedor');
+    const container = map.getContainer();
+    console.log('[MAPA DEBUG] Dimensiones contenedor:', {
+      height: container.clientHeight,
+      width: container.clientWidth,
+      visible: container.offsetParent !== null, // Verifica si está oculto
+    });
+
+    // Delay mínimo para redraw después de mount (común en dashboards responsive)
+    const timeoutId = setTimeout(() => {
+      console.log('[MAPA DEBUG] Ejecutando invalidateSize');
+      map.invalidateSize({ animate: false }); // Sin animación para evitar flicker
+      console.log('[MAPA DEBUG] invalidateSize completado - mapa debería ser visible');
+    }, 150); // 150ms: ajusta a 300 si persiste
+
+    // Opcional: listener para resize window (útil si el dashboard es responsive)
+    const handleResize = () => {
+      console.log('[MAPA DEBUG] Window resize detectado - invalidando size');
+      map.invalidateSize();
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', handleResize);
+      console.log('[MAPA DEBUG] Cleanup: resizer desmontado');
+    };
+  }, [map]); // Dependencia estricta: solo re-ejecuta si map cambia (normalmente solo al mount)
+
+  return null; // No renderiza nada visible
 };
 
 export default DashboardPage;
