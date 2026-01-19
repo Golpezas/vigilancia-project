@@ -245,47 +245,73 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
       {/* Mapa de Geolocalizaciones */}
       <div className="bg-gray-800 p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-bold text-white mb-4">Mapa de Últimas Geolocalizaciones</h3>
-        <div className="h-96 rounded-lg overflow-hidden border border-gray-700">
-          <MapContainer center={[-34.5467, -58.4596]} zoom={15} style={{ height: '100%', width: '100%' }}>
+        <div className="h-96 rounded-lg overflow-hidden border border-gray-700 relative">
+          
+          <MapContainer 
+            center={[-34.5467, -58.4596]} 
+            zoom={15} 
+            style={{ height: '100%', width: '100%' }}
+            whenReady={() => console.log('[MAPA] Mapa creado exitosamente')}
+          >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-            {vigiladores.flatMap(v => 
-              data?.[v]?.filter(r => r.geo).map((reg, idx) => {
-                // Ícono personalizado sin L.divIcon: div React con style inline (vectorial, cero errores)
-                return (
-                  <Marker
-                    key={`${v}-${idx}`}
-                    position={[reg.geo!.lat, reg.geo!.long]}
-                    icon={L.divIcon({
-                      className: 'bg-transparent', // Elimina fondo default
-                      html: `
-                        <div style="
-                          background-color: white;
-                          width: 38px;
-                          height: 38px;
-                          border-radius: 50%;
-                          border: 4px solid #1e40af;
-                          display: flex;
-                          align-items: center;
-                          justify-content: center;
-                          font-weight: bold;
-                          font-size: 20px;
-                          color: #1e40af;
-                          box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-                          text-align: center;
-                          line-height: 38px;
-                        ">
-                          M
-                        </div>
-                      `,
-                      iconSize: [38, 38],
-                      iconAnchor: [19, 19], // Centro del círculo
-                    })}
-                    title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
-                  />
-                );
-              })
-            )}
+            {vigiladores.flatMap(v => {
+              // Log por vigilador: ¿Qué registros tiene cada uno?
+              const registrosV = data?.[v] ?? [];
+              console.log(`[MAPA] Vigilador "${v}": ${registrosV.length} registros totales`);
+
+              return registrosV
+                .filter(r => {
+                  const tieneGeo = !!r.geo;
+                  console.log(`[MAPA] Registro ${v} - ${r.punto}: ¿tiene geo? ${tieneGeo}`, r.geo);
+                  return tieneGeo;
+                })
+                .map((reg, idx) => {
+                  console.log(`[MAPA] Creando Marker ${idx} para "${v}" en punto "${reg.punto}"`, {
+                    lat: reg.geo!.lat,
+                    lng: reg.geo!.long,
+                    timestamp: reg.timestamp,
+                  });
+
+                  // Ícono personalizado
+                  const customIcon = L.divIcon({
+                    className: 'bg-transparent',
+                    html: `
+                      <div style="
+                        background-color: white;
+                        width: 38px;
+                        height: 38px;
+                        border-radius: 50%;
+                        border: 4px solid #1e40af;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: bold;
+                        font-size: 20px;
+                        color: #1e40af;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                        text-align: center;
+                        line-height: 38px;
+                      ">
+                        M
+                      </div>
+                    `,
+                    iconSize: [38, 38],
+                    iconAnchor: [19, 19],
+                  });
+
+                  console.log(`[MAPA] Ícono custom creado para marker ${idx}`);
+
+                  return (
+                    <Marker
+                      key={`${v}-${idx}`}
+                      position={[reg.geo!.lat, reg.geo!.long]}
+                      icon={customIcon}
+                      title={`${v} - ${reg.punto} - ${formatArgentina(reg.timestamp)}`}
+                    />
+                  );
+                });
+            })}
           </MapContainer>
         </div>
       </div>
