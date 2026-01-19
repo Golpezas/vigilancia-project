@@ -247,7 +247,12 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
       {/* Mapa de Últimas Geolocalizaciones */}
       <div className="bg-gray-800 p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-bold text-white mb-4">Mapa de Últimas Geolocalizaciones</h3>
-        <div className="relative h-96 rounded-lg overflow-hidden border border-gray-700 bg-gray-900">
+        
+        {/* Contenedor con altura forzada + fallback */}
+        <div 
+          className="relative w-full h-[400px] min-h-[400px] rounded-lg overflow-hidden border border-gray-700 bg-gray-900"
+          style={{ height: '400px' }} // fallback hard-coded para debug (después podés sacarlo)
+        >
           <MapContainer
             center={[-34.5467, -58.4596]}
             zoom={15}
@@ -256,9 +261,10 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
           >
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-            {/* Resizer type-safe: invalida size al montar, sin querySelector ni any */}
-            <MapResizer />
+            {/* Componente que observa y fuerza resize */}
+            <MapResizeObserver />
 
+            {/* Tus markers... */}
             {vigiladores.flatMap(v => 
               data?.[v]?.filter(r => r.geo).map((reg, idx) => {
                 console.log(`[MAPA DEBUG] Creando marker ${idx} para ${v} en ${reg.punto}`, {
@@ -306,7 +312,7 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
             )}
           </MapContainer>
 
-          {/* Fallback si no hay marcadores */}
+          {/* Fallback */}
           {vigiladores.reduce((acc, v) => acc + (data?.[v]?.filter(r => r.geo).length || 0), 0) === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-gray-400 bg-gray-900/80">
               No hay geolocalizaciones registradas para mostrar en el mapa
@@ -318,41 +324,43 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   );
 };
 
-// Componente hijo para resize: type-safe con useMap (best practice oficial react-leaflet v4+)
-const MapResizer: React.FC = () => {
-  const map = useMap(); // ← Obtiene L.Map directamente, type-safe sin any
+// Observa cambios de tamaño reales y fuerza invalidateSize
+const MapResizeObserver = () => {
+  const map = useMap();
 
   useEffect(() => {
-    console.log('[MAPA DEBUG] Mapa montado - verificando contenedor');
+    if (!map) return;
+
     const container = map.getContainer();
-    console.log('[MAPA DEBUG] Dimensiones contenedor:', {
-      height: container.clientHeight,
-      width: container.clientWidth,
-      visible: container.offsetParent !== null, // Verifica si está oculto
+
+    console.log('[MAPA DEBUG] Contenedor inicial:', {
+      clientHeight: container.clientHeight,
+      offsetHeight: container.offsetHeight,
+      computedStyleHeight: window.getComputedStyle(container).height,
     });
 
-    // Delay mínimo para redraw después de mount (común en dashboards responsive)
-    const timeoutId = setTimeout(() => {
-      console.log('[MAPA DEBUG] Ejecutando invalidateSize');
-      map.invalidateSize({ animate: false }); // Sin animación para evitar flicker
-      console.log('[MAPA DEBUG] invalidateSize completado - mapa debería ser visible');
-    }, 150); // 150ms: ajusta a 300 si persiste
+    // ResizeObserver moderno (mejor que timeout)
+    const resizeObserver = new ResizeObserver(() => {
+      console.log('[MAPA DEBUG] Resize detectado → invalidando tamaño');
+      map.invalidateSize({ animate: false });
+    });
 
-    // Opcional: listener para resize window (útil si el dashboard es responsive)
-    const handleResize = () => {
-      console.log('[MAPA DEBUG] Window resize detectado - invalidando size');
-      map.invalidateSize();
-    };
-    window.addEventListener('resize', handleResize);
+    resizeObserver.observe(container);
+
+    // Forzamos inicial después de un micro-delay (muy común)
+    const initialTimer = setTimeout(() => {
+      console.log('[MAPA DEBUG] Forzado inicial invalidateSize');
+      map.invalidateSize({ animate: false });
+    }, 100);
 
     return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('resize', handleResize);
-      console.log('[MAPA DEBUG] Cleanup: resizer desmontado');
+      resizeObserver.disconnect();
+      clearTimeout(initialTimer);
+      console.log('[MAPA DEBUG] ResizeObserver cleanup');
     };
-  }, [map]); // Dependencia estricta: solo re-ejecuta si map cambia (normalmente solo al mount)
+  }, [map]);
 
-  return null; // No renderiza nada visible
+  return null;
 };
 
 export default DashboardPage;
