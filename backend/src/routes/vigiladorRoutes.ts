@@ -56,33 +56,39 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
           continue;
         }
 
-        // 2. Inferir servicioId desde el punto (para rotación: primer escaneo crea en servicio del punto)
+        // 2. Inferir servicioId desde el punto (normalización: asegura relación Punto → Servicio)
         const punto = await tx.punto.findUnique({
           where: { id: reg.punto },
-          include: { servicios: { select: { servicioId: true } } }, // Relación many-to-many via ServicioPunto
+          include: { servicios: { select: { servicioId: true } } }, // Many-to-many via ServicioPunto
         });
 
         if (!punto || punto.servicios.length === 0) {
           throw new Error(`Punto ${reg.punto} no encontrado o sin servicio asignado`);
         }
 
-        const servicioId = punto.servicios[0].servicioId; // Toma el primer servicio (ajusta si multi-servicio por punto)
+        const servicioId = punto.servicios[0].servicioId; // Toma el primer servicio (ajusta si multi)
 
-        // 3. Crear o obtener vigilador (upsert para creación automática si nuevo)
+        // 3. Crear o obtener vigilador (upsert con creación automática si nuevo)
         const vigilador = await tx.vigilador.upsert({
           where: { legajo: reg.legajo },
-          update: {}, // No actualiza si existe
+          update: {}, // No actualiza si existe (podemos agregar lógica de rotación aquí si cambian servicios)
           create: {
-            nombre: reg.nombre, // Usa el nombre del form
+            nombre: reg.nombre,
             legajo: reg.legajo,
-            ultimoPunto: 0,
-            rondaActiva: false,
-            servicio: { connect: { id: servicioId } }, // Asigna al servicio inferido del punto
+            ultimoPunto: reg.punto, // Inicializa con el primer punto escaneado
+            rondaActiva: true,      // Inicia ronda activa al crear (resuelve problema 1)
+            servicio: { connect: { id: servicioId } }, // Asigna al servicio del punto
           },
-          select: { id: true, servicioId: true },
+          select: { id: true, servicioId: true, ultimoPunto: true, rondaActiva: true },
         });
 
-        // 4. Crear registro con relaciones
+        // 4. Validación de orden secuencial (no saltos - resuelve problema 2)
+        const puntoEsperado = vigilador.ultimoPunto + 1; // Siguiente esperado
+        if (reg.punto !== puntoEsperado) {
+          throw new Error(`Inconsistencia en orden: Debes escanear el punto ${puntoEsperado} antes de ${reg.punto}. Inicia la ronda si es necesario.`);
+        }
+
+        // 5. Crear registro (normalizado)
         await tx.registro.create({
           data: {
             vigilador: { connect: { id: vigilador.id } },
@@ -92,6 +98,15 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
             geolocalizacion: reg.geo ? JSON.stringify(reg.geo) : null,
             novedades: reg.novedades,
             uuid: reg.uuid,
+          },
+        });
+
+        // 6. Actualizar vigilador: avanza ultimoPunto y mantiene rondaActiva true (hasta fin de ronda)
+        await tx.vigilador.update({
+          where: { id: vigilador.id },
+          data: {
+            ultimoPunto: reg.punto,
+            rondaActiva: true, // Mantiene activa hasta completar todos los puntos (lógica futura para false)
           },
         });
 

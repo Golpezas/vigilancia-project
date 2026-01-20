@@ -4,7 +4,7 @@ import { useFormik } from 'formik';
 import { z } from 'zod';
 import { isAxiosError } from 'axios'; // ← Necesario para axios.isAxiosError
 import api from '../services/api';
-import type { ApiResponse } from '../types';
+//import type { ApiResponse } from '../types';
 import { db } from '../db/offlineDb';
 
 const FormSchema = z.object({
@@ -109,16 +109,22 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         // Dentro del try del onSubmit:
         if (navigator.onLine) {
           try {
-            const response = await api.post<ApiResponse>('/submit-batch', {
-              registros: [registro], // Enviamos batch de 1 registro
+            const response = await api.post('/submit-batch', {
+              registros: [registro],
             });
 
             if (response.data.success) {
               await db.registros.where('uuid').equals(registro.uuid).modify({ synced: true });
-              successMessage = response.data.mensaje || 'Registro enviado exitosamente';
+              successMessage = response.data.message || 'Registro enviado exitosamente';
             }
-          } catch (syncErr) {
-            console.warn('[SYNC INMEDIATO] Falló envío inmediato, queda pendiente:', syncErr);
+          } catch (syncError: unknown) {
+            console.warn('[SYNC INMEDIATO] Falló:', syncError);
+            if (isAxiosError(syncError) && syncError.response?.data?.error) {
+              onError(syncError.response.data.error); // Muestra mensaje del backend (e.g., "Debes escanear el punto X")
+            } else {
+              // Fallback
+              onError('Error al sincronizar. Queda pendiente.');
+            }
           }
         }
 
