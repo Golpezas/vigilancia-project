@@ -15,7 +15,7 @@ function App() {
   const [isAdminMode, setIsAdminMode] = useState<boolean>(!!localStorage.getItem('adminToken'));
   const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
 
-  useOfflineSync(); // Auto-sync en background
+  const { pendingCount, syncNow } = useOfflineSync(); // Reemplaza el useOfflineSync anterior
 
   const handleAdminLogin = (newToken: string) => {
     localStorage.setItem('adminToken', newToken);
@@ -63,6 +63,18 @@ function App() {
           >
             Ingresar como Administrador
           </button>
+        )}
+
+        {pendingCount > 0 && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-yellow-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+            <span>Pendientes: {pendingCount}</span>
+            <button 
+              onClick={syncNow}
+              className="bg-white text-yellow-600 px-3 py-1 rounded-md font-medium hover:bg-gray-100 transition"
+            >
+              Sincronizar ahora
+            </button>
+          </div>
         )}
 
         {mensaje && (

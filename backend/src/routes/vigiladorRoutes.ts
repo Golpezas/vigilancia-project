@@ -52,27 +52,43 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
         });
 
         if (existing) {
-          syncedUuids.push(reg.uuid); // Ya estaba, lo consideramos "sincronizado"
+          syncedUuids.push(reg.uuid);
           continue;
         }
 
-        // 2. Buscar vigilador para obtener IDs y servicioId
-        const vigilador = await tx.vigilador.findUnique({
+        // 2. Inferir servicioId desde el punto (para rotación: primer escaneo crea en servicio del punto)
+        const punto = await tx.punto.findUnique({
+          where: { id: reg.punto },
+          include: { servicios: { select: { servicioId: true } } }, // Relación many-to-many via ServicioPunto
+        });
+
+        if (!punto || punto.servicios.length === 0) {
+          throw new Error(`Punto ${reg.punto} no encontrado o sin servicio asignado`);
+        }
+
+        const servicioId = punto.servicios[0].servicioId; // Toma el primer servicio (ajusta si multi-servicio por punto)
+
+        // 3. Crear o obtener vigilador (upsert para creación automática si nuevo)
+        const vigilador = await tx.vigilador.upsert({
           where: { legajo: reg.legajo },
+          update: {}, // No actualiza si existe
+          create: {
+            nombre: reg.nombre, // Usa el nombre del form
+            legajo: reg.legajo,
+            ultimoPunto: 0,
+            rondaActiva: false,
+            servicio: { connect: { id: servicioId } }, // Asigna al servicio inferido del punto
+          },
           select: { id: true, servicioId: true },
         });
 
-        if (!vigilador) {
-          throw new Error(`Vigilador con legajo ${reg.legajo} no encontrado`);
-        }
-
-        // 3. Crear registro usando relaciones connect (checked mode)
+        // 4. Crear registro con relaciones
         await tx.registro.create({
           data: {
             vigilador: { connect: { id: vigilador.id } },
             punto: { connect: { id: reg.punto } },
-            servicio: { connect: { id: vigilador.servicioId } }, // ← connect a servicio usando ID del vigilador
-            timestamp: reg.timestamp, // ya transformado a Date
+            servicio: { connect: { id: servicioId } },
+            timestamp: reg.timestamp,
             geolocalizacion: reg.geo ? JSON.stringify(reg.geo) : null,
             novedades: reg.novedades,
             uuid: reg.uuid,
