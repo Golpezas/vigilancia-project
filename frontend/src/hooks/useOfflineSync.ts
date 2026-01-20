@@ -18,9 +18,10 @@ export const useOfflineSync = () => {
   // Función memoizada para actualizar contador (estable)
   const updatePendingCount = useCallback(async () => {
     try {
+      console.log('[OFFLINE DEBUG] Contando pendientes...');
       const count = await db.registros.where('synced').equals(0).count();
+      console.log('[OFFLINE DEBUG] Pendientes encontrados:', count);
       setPendingCount(count);
-      console.log('[OFFLINE DEBUG] Contador actualizado:', count);
     } catch (err) {
       console.error('[OFFLINE COUNT ERROR]', err);
       setPendingCount(0);
@@ -29,10 +30,12 @@ export const useOfflineSync = () => {
 
   // Efecto principal: sync inicial + listeners + timer
   useEffect(() => {
-    console.log('[OFFLINE DEBUG] Hook montado - iniciando sync y conteo');
+    console.log('[OFFLINE HOOK] Montado - forzando sync y conteo inicial');
 
-    // Sync y conteo iniciales
-    syncPendingRegistros().then(updatePendingCount);
+    // Sync y conteo inicial (forzado)
+    syncPendingRegistros()
+      .then(() => updatePendingCount())
+      .catch(err => console.error('[OFFLINE INIT ERROR]', err));
 
     // Listener reconexión
     const handleOnline = () => {

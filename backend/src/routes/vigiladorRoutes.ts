@@ -82,10 +82,18 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
           select: { id: true, servicioId: true, ultimoPunto: true, rondaActiva: true },
         });
 
-        // 4. Validación de orden secuencial (no saltos - resuelve problema 2)
-        const puntoEsperado = vigilador.ultimoPunto + 1; // Siguiente esperado
+        // 4. Validación de orden secuencial (no saltos)
+        let puntoEsperado = vigilador.ultimoPunto + 1;
+
+        // Caso especial: si es el primer punto de la ronda (ultimoPunto = 0), permite cualquier punto como inicio
+        if (vigilador.ultimoPunto === 0) {
+          puntoEsperado = reg.punto; // Acepta el actual como inicio
+        }
+
         if (reg.punto !== puntoEsperado) {
-          throw new Error(`Inconsistencia en orden: Debes escanear el punto ${puntoEsperado} antes de ${reg.punto}. Inicia la ronda si es necesario.`);
+          throw new Error(
+            `Inconsistencia en orden: Debes escanear el punto ${puntoEsperado} antes de ${reg.punto}. Inicia la ronda si es necesario.`
+          );
         }
 
         // 5. Crear registro (normalizado)

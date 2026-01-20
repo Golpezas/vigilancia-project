@@ -103,39 +103,41 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         await db.registros.put(registro);
         console.log('💾 Guardado localmente', { uuid: registro.uuid });
 
+        // Intentar sync inmediato
         let successMessage = 'Registro guardado localmente. Se sincronizará automáticamente.';
 
-        // Intentar sync inmediato (mejor detección de online)
-        const isOnline = navigator.onLine;
-        console.log('[DEBUG ONLINE]', { isOnline, navigatorOnline: navigator.onLine });
-
-        if (isOnline) {
+        if (navigator.onLine) {
+          console.log('[DEBUG] Intentando sync inmediato - navigator.onLine = true');
           try {
             const response = await api.post('/submit-batch', {
               registros: [registro],
             });
 
-            console.log('[SYNC INMEDIATO] Respuesta:', response.data);
+            console.log('[SYNC INMEDIATO] Respuesta backend:', response.status, response.data);
 
             if (response.data.success) {
               await db.registros.where('uuid').equals(registro.uuid).modify({ synced: true });
               successMessage = response.data.message || 'Registro enviado exitosamente al servidor';
+              console.log('[SUCCESS] Sync OK');
+            } else {
+              throw new Error(response.data.error || 'Respuesta no success');
             }
           } catch (syncError: unknown) {
-            console.warn('[SYNC INMEDIATO] Falló:', syncError);
-
+            console.error('[SYNC INMEDIATO ERROR]', syncError);
             let displayError = 'Error al sincronizar. Queda pendiente.';
 
             if (isAxiosError(syncError) && syncError.response?.data?.error) {
-              const backendMsg = syncError.response.data.error;
-              displayError = backendMsg; // Muestra mensaje claro del backend (e.g., orden incorrecto)
+              displayError = syncError.response.data.error; // Muestra mensaje backend claro
             }
 
             onError(displayError);
           }
+        } else {
+          console.log('[DEBUG] No hay conexión - queda pendiente');
         }
 
         onSuccess(successMessage);
+
       } catch (error: unknown) {
         // Tu manejo de errores original (intacto)
         let errMsg = 'Error desconocido';
