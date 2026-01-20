@@ -10,7 +10,13 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/.*\/submit-batch/, // Coincide con tu endpoint
+            handler: 'NetworkOnly',
+          },
+        ],
       },
       manifest: {
         name: 'Control de Rondas - Vigilancia QR',

@@ -6,6 +6,7 @@ import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLogin } from './components/AdminLogin';
+import { useOfflineSync } from './hooks/useOfflineSync'; // Ajusta path
 
 function App() {
   const [punto, setPunto] = useState<number | null>(null);
@@ -13,6 +14,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(!!localStorage.getItem('adminToken'));
   const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
+
+  useOfflineSync(); // Auto-sync en background
 
   const handleAdminLogin = (newToken: string) => {
     localStorage.setItem('adminToken', newToken);

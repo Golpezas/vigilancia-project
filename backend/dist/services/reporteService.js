@@ -8,7 +8,6 @@ const vigiladorRepository_1 = require("../repositories/vigiladorRepository");
 const zod_1 = require("zod");
 const logger_1 = __importDefault(require("../utils/logger"));
 const dateUtils_1 = require("../utils/dateUtils");
-const errorHandler_1 = require("../utils/errorHandler");
 const ReporteFiltroSchema = zod_1.z.object({
     servicioId: zod_1.z.string().uuid(),
     fechaDesde: zod_1.z.string().datetime({ offset: true }).optional().transform(val => val ? new Date(val) : undefined),
@@ -35,12 +34,12 @@ class ReporteService {
             orderBy: { timestamp: 'asc' },
         });
         if (!registros.length) {
-            logger_1.default.info({ filtros }, 'No se encontraron registros para los filtros');
-            throw new errorHandler_1.ValidationError('No hay registros para los filtros proporcionados');
+            logger_1.default.info({ filtros }, 'ℹ️ No se encontraron registros - retornando vacío');
+            return {};
         }
         const rondasPorVigilador = {};
         registros.forEach(reg => {
-            const key = reg.vigiladorId;
+            const key = `${reg.vigilador.nombre} - Legajo ${reg.vigilador.legajo}`;
             if (!rondasPorVigilador[key])
                 rondasPorVigilador[key] = [];
             rondasPorVigilador[key].push({
@@ -50,7 +49,7 @@ class ReporteService {
                 novedades: reg.novedades,
             });
         });
-        const MAX_TIEMPO_ENTRE_PUNTOS = 15 * 60 * 1000;
+        const MAX_TIEMPO_ENTRE_PUNTOS = 60 * 60 * 1000;
         Object.values(rondasPorVigilador).forEach(ronda => {
             for (let i = 1; i < ronda.length; i++) {
                 const prevTime = new Date(ronda[i - 1].timestamp).getTime();
@@ -58,6 +57,7 @@ class ReporteService {
                 const diff = currTime - prevTime;
                 if (diff > MAX_TIEMPO_ENTRE_PUNTOS) {
                     ronda[i].alerta = `Delay excesivo: ${Math.round(diff / 60000)} min`;
+                    logger_1.default.debug({ diffMin: Math.round(diff / 60000) }, '⚠️ Delay detectado');
                 }
             }
         });

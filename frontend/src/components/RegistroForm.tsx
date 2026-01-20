@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { isAxiosError } from 'axios'; // ← Necesario para axios.isAxiosError
 import api from '../services/api';
 import type { ApiResponse } from '../types';
+import { db } from '../db/offlineDb';
 
 const FormSchema = z.object({
   nombre: z.string().min(3, 'Nombre muy corto'),
@@ -73,6 +74,8 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
       return {};
     },
     onSubmit: async (values, { setSubmitting }) => {
+      setSubmitting(true); // Asegura que el botón se deshabilite
+
       try {
         console.log('📤 Iniciando submit:', {
           nombre: values.nombre.trim(),
@@ -83,73 +86,87 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           geo,
         });
 
-        const response = await api.post<ApiResponse>('/submit', {
+        // Crear registro offline normalizado
+        const registro = {
           nombre: values.nombre.trim(),
           legajo: values.legajo,
           punto,
           novedades: values.novedades?.trim(),
           timestamp: new Date().toISOString(),
-          geo,
-        });
+          geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : undefined,
+          uuid: crypto.randomUUID(),           // UUID único para idempotencia
+          createdAt: new Date().toISOString(),
+          synced: false,
+        };
 
-        console.log('✅ Respuesta exitosa:', response.data);
+        // Siempre guardar localmente (modo offline-first)
+        await db.registros.put(registro);
+        console.log('💾 Registro guardado localmente (IndexedDB)', { uuid: registro.uuid });
 
-        if (response.data.success) {
-          onSuccess(response.data.mensaje || 'Registro enviado');
-        } else {
-          throw new Error(response.data.error || 'Error desconocido');
+        // Intentar envío inmediato si hay conexión
+        let successMessage = 'Registro guardado localmente. Se sincronizará cuando haya internet.';
+        
+        // Dentro del try del onSubmit:
+        if (navigator.onLine) {
+          try {
+            const response = await api.post<ApiResponse>('/submit-batch', {
+              registros: [registro], // Enviamos batch de 1 registro
+            });
+
+            if (response.data.success) {
+              await db.registros.where('uuid').equals(registro.uuid).modify({ synced: true });
+              successMessage = response.data.mensaje || 'Registro enviado exitosamente';
+            }
+          } catch (syncErr) {
+            console.warn('[SYNC INMEDIATO] Falló envío inmediato, queda pendiente:', syncErr);
+          }
         }
-      } catch (error: unknown) {
-        // Inicialización normalizada de variables (best practice: evita undefineds)
-        let errMsg = 'Error desconocido'; // Fallback base
-        let code: string | undefined = undefined;
-        let responseData: unknown = undefined;
-        let responseStatus: number | undefined = undefined;
 
-        // Narrowing exhaustivo y type-safe para error genérico
+        onSuccess(successMessage);
+      } catch (error: unknown) {
+        // Tu manejo de errores original queda intacto
+        let errMsg = 'Error desconocido';
+        let code: string | undefined;
+        let responseData: unknown;
+        let responseStatus: number | undefined;
+
         if (error instanceof Error) {
           errMsg = error.message;
         }
 
-        // Chequeo específico para AxiosError (usa isAxiosError para narrowing automático)
         if (isAxiosError(error) && error.response) {
-          // TS ahora infiere que error es AxiosError con response
           const { data, status } = error.response;
-          code = error.code; // e.g., 'ECONNABORTED' para timeouts
-          responseData = data; // Podría ser { error: string } u otro
-          responseStatus = status; // e.g., 400, 403, 500
+          code = error.code;
+          responseData = data;
+          responseStatus = status;
 
-          // Normalización del mensaje del backend (DRY: un solo lugar para chequeos)
           if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
-            errMsg = data.error; // Usa directamente el error del backend si existe
+            errMsg = data.error;
           } else {
-            errMsg = `Error del servidor (código ${status})`; // Fallback genérico con status
+            errMsg = `Error del servidor (código ${status})`;
           }
         }
 
-        // Lógica de mensajes personalizados (integra tus chequeos aquí para evitar duplicación)
-        let displayMsg = errMsg; // Normalizado para UX
+        let displayMsg = errMsg;
         if (errMsg.includes('no pertenece') || errMsg.includes('siguiente') || errMsg.includes('Inicia la ronda')) {
-          displayMsg = errMsg; // Muestra mensaje claro del backend sin cambios
+          displayMsg = errMsg;
         } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
           displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
         } else if (responseStatus === 500) {
           displayMsg = 'Error interno del servidor. Intenta más tarde.';
-        } // Agrega más status si necesitas (e.g., 401 para auth)
+        }
 
-        // Logging estructurado (mejor práctica: objeto JSON para traceabilidad)
         console.error('❌ Error en submit:', {
           originalMessage: errMsg,
           code,
           status: responseStatus,
           response: responseData,
-          stack: error instanceof Error ? error.stack : undefined, // Opcional para dev
+          stack: error instanceof Error ? error.stack : undefined,
         });
 
-        // Llama a onError con el mensaje normalizado y amigable para el usuario
         onError(displayMsg);
       } finally {
-        setSubmitting(false); // Siempre ejecuta (best practice: evita submits stuck)
+        setSubmitting(false);
       }
     },
   });

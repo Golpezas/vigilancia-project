@@ -69,20 +69,21 @@ model Registro {
   id              String   @id @default(uuid())
   vigiladorId     String
   puntoId         Int
-  servicioId      String // ← NUEVO
-  timestamp       DateTime @default(now())
+  servicioId      String
+  timestamp       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   geolocalizacion String?
   novedades       String?
+  uuid            String?  @unique   // ← debe estar aquí
 
-  vigilador Vigilador @relation(fields: [vigiladorId], references: [id])
-  punto     Punto     @relation(fields: [puntoId], references: [id])
-  servicio  Servicio  @relation(fields: [servicioId], references: [id]) // ← NUEVO
+  vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
+  punto           Punto     @relation(fields: [puntoId], references: [id])
+  servicio        Servicio  @relation(fields: [servicioId], references: [id])
 
   @@index([vigiladorId, timestamp])
   @@index([vigiladorId, createdAt])
-  @@index([servicioId]) // ← NUEVO: para filtros por cliente
+  @@index([servicioId])
   @@map("registro")
 }
 
