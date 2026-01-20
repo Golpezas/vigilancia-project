@@ -1,7 +1,6 @@
 // frontend/src/hooks/useOfflineSync.ts
 // Hook para auto-sync offline - Mejores prácticas 2026: Eventos nativos + timer polling + visibility change
-// Type-safety estricta, normalización synced a number (0/1) para indexing óptimo en Dexie,
-// evitación total de cascading renders: actualización de contador en useEffect separado
+// Type-safety estricta, evitación de cascading renders con useCallback + efectos separados
 
 import { useEffect, useState, useCallback } from 'react';
 import { syncPendingRegistros } from '../utils/offlineSync';
@@ -9,48 +8,52 @@ import { db } from '../db/offlineDb';
 
 /**
  * Hook que gestiona sincronización automática y contador de pendientes.
- * - Sync al mount, al recuperar conexión, al volver a foreground, y polling cada 30s si pendientes > 0.
- * - Usa synced como number (0=pendiente, 1=synced) para compatibilidad óptima con Dexie indexing.
- * - Evita cascading renders: actualización de contador en useEffect dedicado.
+ * - Sync al mount, al recuperar conexión, al volver a foreground, y polling cada 15-60s.
+ * - Evita cascading renders: actualización de contador en efecto dedicado.
+ * - Logging detallado para depuración.
  */
 export const useOfflineSync = () => {
   const [pendingCount, setPendingCount] = useState<number>(0);
 
-  // Función memoizada para actualizar contador (estable y reusable)
+  // Función memoizada para actualizar contador (estable)
   const updatePendingCount = useCallback(async () => {
     try {
       const count = await db.registros.where('synced').equals(0).count();
       setPendingCount(count);
+      console.log('[OFFLINE DEBUG] Contador actualizado:', count);
     } catch (err) {
-      console.warn('[OFFLINE COUNT] Error al contar pendientes:', err);
+      console.error('[OFFLINE COUNT ERROR]', err);
       setPendingCount(0);
     }
   }, []);
 
-  // Efecto 1: Sync inicial + listeners + timer (NO actualiza contador aquí)
+  // Efecto principal: sync inicial + listeners + timer
   useEffect(() => {
-    // Solo sync inicial (no llama a setState directamente)
-    syncPendingRegistros();
+    console.log('[OFFLINE DEBUG] Hook montado - iniciando sync y conteo');
+
+    // Sync y conteo iniciales
+    syncPendingRegistros().then(updatePendingCount);
 
     // Listener reconexión
     const handleOnline = () => {
-      console.log('[OFFLINE] Conexión restaurada → sincronizando');
+      console.log('[OFFLINE] Evento online detectado → sincronizando');
       syncPendingRegistros().then(updatePendingCount);
     };
     window.addEventListener('online', handleOnline);
 
-    // Timer polling: cada 30s si online
+    // Timer polling (15s dev, 60s prod)
     const pollInterval = setInterval(async () => {
       if (navigator.onLine) {
+        console.log('[POLL SYNC] Verificando pendientes periódicamente');
         await syncPendingRegistros();
         await updatePendingCount();
       }
-    }, 30000);
+    }, import.meta.env.DEV ? 15000 : 60000);
 
     // Visibility change (foreground)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && navigator.onLine) {
-        console.log('[VISIBILITY SYNC] App visible → intentando sync');
+        console.log('[VISIBILITY] App visible → sincronizando');
         syncPendingRegistros().then(updatePendingCount);
       }
     };
@@ -61,18 +64,6 @@ export const useOfflineSync = () => {
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [updatePendingCount]); // Dependencia estable
-
-  // Efecto 2: Actualización inicial y periódica del contador (separado para evitar warning)
-  useEffect(() => {
-    // Inicial al mount
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    updatePendingCount();
-
-    // Opcional: refresco periódico del contador (cada 60s por si sync falla silenciosamente)
-    const countInterval = setInterval(updatePendingCount, 60000);
-
-    return () => clearInterval(countInterval);
   }, [updatePendingCount]);
 
   return {

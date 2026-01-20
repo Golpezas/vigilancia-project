@@ -74,7 +74,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
       return {};
     },
     onSubmit: async (values, { setSubmitting }) => {
-      setSubmitting(true); // Asegura que el botón se deshabilite
+      setSubmitting(true);
 
       try {
         console.log('📤 Iniciando submit:', {
@@ -86,59 +86,64 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           geo,
         });
 
-        // Crear registro offline normalizado
+        // Crear registro normalizado
         const registro = {
           nombre: values.nombre.trim(),
           legajo: values.legajo,
           punto,
-          novedades: values.novedades?.trim(),
+          novedades: values.novedades?.trim() ?? undefined,
           timestamp: new Date().toISOString(),
           geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : undefined,
-          uuid: crypto.randomUUID(),           // UUID único para idempotencia
+          uuid: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
           synced: false,
         };
 
-        // Siempre guardar localmente (modo offline-first)
+        // Siempre guardar localmente
         await db.registros.put(registro);
-        console.log('💾 Registro guardado localmente (IndexedDB)', { uuid: registro.uuid });
+        console.log('💾 Guardado localmente', { uuid: registro.uuid });
 
-        // Intentar envío inmediato si hay conexión
-        let successMessage = 'Registro guardado localmente. Se sincronizará cuando haya internet.';
-        
-        // Dentro del try del onSubmit:
-        if (navigator.onLine) {
+        let successMessage = 'Registro guardado localmente. Se sincronizará automáticamente.';
+
+        // Intentar sync inmediato (mejor detección de online)
+        const isOnline = navigator.onLine;
+        console.log('[DEBUG ONLINE]', { isOnline, navigatorOnline: navigator.onLine });
+
+        if (isOnline) {
           try {
             const response = await api.post('/submit-batch', {
               registros: [registro],
             });
 
+            console.log('[SYNC INMEDIATO] Respuesta:', response.data);
+
             if (response.data.success) {
               await db.registros.where('uuid').equals(registro.uuid).modify({ synced: true });
-              successMessage = response.data.message || 'Registro enviado exitosamente';
+              successMessage = response.data.message || 'Registro enviado exitosamente al servidor';
             }
           } catch (syncError: unknown) {
             console.warn('[SYNC INMEDIATO] Falló:', syncError);
+
+            let displayError = 'Error al sincronizar. Queda pendiente.';
+
             if (isAxiosError(syncError) && syncError.response?.data?.error) {
-              onError(syncError.response.data.error); // Muestra mensaje del backend (e.g., "Debes escanear el punto X")
-            } else {
-              // Fallback
-              onError('Error al sincronizar. Queda pendiente.');
+              const backendMsg = syncError.response.data.error;
+              displayError = backendMsg; // Muestra mensaje claro del backend (e.g., orden incorrecto)
             }
+
+            onError(displayError);
           }
         }
 
         onSuccess(successMessage);
       } catch (error: unknown) {
-        // Tu manejo de errores original queda intacto
+        // Tu manejo de errores original (intacto)
         let errMsg = 'Error desconocido';
         let code: string | undefined;
         let responseData: unknown;
         let responseStatus: number | undefined;
 
-        if (error instanceof Error) {
-          errMsg = error.message;
-        }
+        if (error instanceof Error) errMsg = error.message;
 
         if (isAxiosError(error) && error.response) {
           const { data, status } = error.response;
