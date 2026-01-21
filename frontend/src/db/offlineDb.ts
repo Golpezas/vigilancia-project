@@ -10,11 +10,10 @@ import type { SubmitRegistroData } from '../types/index'; // Mantenemos solo lo 
  * Normalización: timestamp siempre ISO, geo opcional.
  */
 export interface RegistroOffline extends SubmitRegistroData {
-  uuid: string;         // UUID único generado localmente (idempotente en backend)
-  createdAt: string;    // ISO timestamp de creación local
-  synced: boolean;      // false = pendiente para sync
+  uuid: string;
+  createdAt: string;
+  synced: number; // 0 = pendiente, 1 = synced (mejor para Dexie indexing)
 }
-
 /**
  * Clase DB singleton: encapsula IndexedDB con Dexie.
  * - Versión 1: esquema inicial con índices para filtros rápidos (e.g., por synced).

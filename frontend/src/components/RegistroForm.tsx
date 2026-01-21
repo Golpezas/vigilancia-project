@@ -100,7 +100,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         };
 
         // Siempre guardar localmente
-        await db.registros.put(registro);
+        await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
         console.log('💾 Guardado localmente', { uuid: registro.uuid });
 
         // Intentar sync inmediato
@@ -118,7 +118,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             console.log('[SYNC SUCCESS] Respuesta backend:', response.status, response.data);
 
             if (response.data.success) {
-              await db.registros.where('uuid').equals(registro.uuid).modify({ synced: true });
+              await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 0 });
               successMessage = response.data.message || 'Registro enviado exitosamente al servidor';
               console.log('[SUCCESS] Sync OK - marcado como sincronizado');
             } else {

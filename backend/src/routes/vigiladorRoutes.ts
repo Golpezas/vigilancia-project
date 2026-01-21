@@ -83,10 +83,11 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
         });
 
         // 4. Validación de orden secuencial (no saltos)
-        // Caso especial: si es el primer punto (ultimoPunto === 0), acepta cualquier punto como inicio de ronda
+        // Caso especial: si es el primer punto (ultimoPunto === 0), acepta el punto escaneado como inicio
         let puntoEsperado = vigilador.ultimoPunto + 1;
         if (vigilador.ultimoPunto === 0) {
-          puntoEsperado = reg.punto; // Acepta el actual como punto inicial
+          puntoEsperado = reg.punto; // Acepta como inicio
+          console.log('[DEBUG BACKEND] Primer punto para legajo', reg.legajo, ' - aceptando', reg.punto, 'como inicio de ronda');
         }
 
         if (reg.punto !== puntoEsperado) {
