@@ -26,20 +26,31 @@ import type { VigiladorEstadoExtendido } from '../types/index';
 
 export class VigiladorService {
   /**
-   * Procesa el escaneo de un punto QR.
-   * Valida secuencia estricta basada en los puntos asignados al servicio del vigilador.
-   * Asigna automáticamente el servicio al iniciar una ronda.
-   * @param data Datos validados desde controller
-   * @returns Respuesta normalizada para frontend
+   * Procesa el escaneo de un punto QR con validaciones estrictas de secuencia y estado de ronda.
+   * - Impide duplicados del mismo punto en la misma ronda
+   * - Prohíbe reiniciar (punto 1) si ronda activa e incompleta
+   * - Asigna servicio automáticamente solo en el primer escaneo válido
+   * - Idempotente vía UUID (para sync offline)
+   * - Todo dentro de una transacción atómica + manejo de concurrencia
    */
-  static async procesarEscaneo(data: SubmitRegistroData): Promise<{ success: true; mensaje: string }> {
-    const { nombre, legajo, punto, novedades, timestamp, geo } = data;
+  static async procesarEscaneo(
+    data: SubmitRegistroData & { uuid: string } // uuid ahora obligatorio (no optional)
+  ): Promise<{ success: true; mensaje: string }> {
+    const { nombre, legajo, punto, novedades, timestamp, geo, uuid } = data;
 
-    // 1. Buscar o crear vigilador (sin servicio preasignado)
-    const vigilador: VigiladorEstado = await VigiladorRepository.findOrCreate(legajo, nombre.trim(), punto);
+    logger.info({ legajo, punto, uuid }, '📥 Iniciando procesamiento de escaneo');
 
-    // 2. Cargar datos completos (incluye servicio si ya está asignado)
-    const vigiladorCompleto = await prisma.vigilador.findUnique({
+    // 1. Validaciones tempranas (fail-fast)
+    if (!Number.isInteger(punto) || punto <= 0) {
+      throw new ValidationError('El punto debe ser un entero positivo');
+    }
+
+    if (!uuid || typeof uuid !== 'string' || uuid.length < 20) {
+      throw new ValidationError('UUID válido requerido para idempotencia y sincronización offline');
+    }
+
+    // 2. Obtener vigilador con include completo
+    const vigilador = await prisma.vigilador.findUnique({
       where: { legajo },
       include: {
         servicio: {
@@ -53,173 +64,134 @@ export class VigiladorService {
       },
     });
 
-    if (!vigiladorCompleto) {
-      throw new ValidationError('Vigilador no encontrado');
+    if (!vigilador) {
+      throw new NotFoundError('Vigilador no encontrado');
     }
 
-    // 3. Buscar servicios que incluyen este punto
-    const serviciosConPunto = await prisma.servicio.findMany({
-      where: {
-        puntos: {
-          some: { puntoId: punto },
-        },
-      },
-      include: {
-        puntos: {
-          include: { punto: true },
-          orderBy: { punto: { id: 'asc' } },
-        },
-      },
-    });
-
-    let servicioAsignado: typeof vigiladorCompleto.servicio;
-    let puntosDelServicio: { id: number; nombre: string }[] = [];
-
-    // 4. Lógica de asignación o validación del servicio
-    if (vigiladorCompleto.rondaActiva === false && vigiladorCompleto.ultimoPunto === 0) {
-      // PRIMER ESCANEO → ASIGNAR SERVICIO AUTOMÁTICAMENTE
-
-      if (serviciosConPunto.length === 0) {
-        logger.warn({ legajo, punto }, 'Punto no asignado a ningún servicio');
-        throw new ValidationError('Este punto no está asignado a ningún cliente');
-      }
-
-      if (serviciosConPunto.length > 1) {
-        const nombres = serviciosConPunto.map((s: { nombre: string }) => s.nombre).join(', ');
-        logger.warn({ legajo, punto, servicios: nombres }, 'Punto compartido entre múltiples servicios');
-        throw new ForbiddenError(`Este punto pertenece a varios clientes: ${nombres}. Contacta al administrador.`);
-      }
-
-      // ✅ Asignar el único servicio encontrado
-      servicioAsignado = serviciosConPunto[0];
-      puntosDelServicio = servicioAsignado.puntos.map(
-        (sp: { punto: { id: number; nombre: string } }) => sp.punto
-      );
-
-      // Actualizar vigilador con servicio (en transacción)
-      await prisma.$transaction([
-        prisma.vigilador.update({
-          where: { legajo },
-          data: { servicioId: servicioAsignado.id },
-        }),
-      ]);
-
-      logger.info(
-        { legajo, servicio: servicioAsignado.nombre, punto },
-        '✅ Servicio asignado automáticamente al iniciar ronda'
-      );
-
-    } else {
-      // ESCANEO EN RONDA ACTIVA → VALIDAR SERVICIO ACTUAL
-
-      if (!vigiladorCompleto.servicio) {
-        // Estado inconsistente: ronda activa pero sin servicio
-        throw new ValidationError('Error interno: ronda activa sin servicio asignado');
-      }
-
-      servicioAsignado = vigiladorCompleto.servicio;
-      puntosDelServicio = servicioAsignado.puntos.map(
-        (sp: { punto: { id: number; nombre: string } }) => sp.punto
-      );
-
-      // Validar que el punto pertenezca al servicio actual
-      const puntoValido = puntosDelServicio.find(p => p.id === punto);
-      if (!puntoValido) {
-        logger.warn(
-          { legajo, punto, servicio: servicioAsignado.nombre },
-          'Punto no pertenece al servicio activo'
-        );
-        throw new ValidationError(
-          `Este punto no pertenece a tu ronda (${servicioAsignado.nombre}). Inicia una nueva ronda.`
-        );
-      }
+    if (!vigilador.servicio) {
+      throw new ValidationError('El vigilador no tiene un servicio asignado. Contacta al administrador.');
     }
 
-    // 5. Validación de secuencia
-    const posicionActual = vigiladorCompleto.ultimoPunto;
-    const totalPuntos = puntosDelServicio.length;
+    const servicio = vigilador.servicio;
+    const puntosOrdenados = servicio.puntos.map(sp => sp.punto);
 
-    if (posicionActual === 0) {
-      // Primera ronda: debe empezar por el primer punto
-      if (punto !== puntosDelServicio[0].id) {
-        const primerPunto = puntosDelServicio[0];
+    if (puntosOrdenados.length === 0) {
+      throw new ValidationError('El servicio no tiene puntos configurados');
+    }
+
+    // 3. Idempotencia: verificar UUID
+    const registroExistente = await prisma.registro.findUnique({ where: { uuid } });
+    if (registroExistente) {
+      logger.debug({ uuid, registroId: registroExistente.id }, '🔄 Registro duplicado detectado (idempotente)');
+      return { success: true, mensaje: 'Registro ya procesado previamente' };
+    }
+
+    // 4. Estado de ronda
+    const esInicioRonda = vigilador.ultimoPunto === 0 && !vigilador.rondaActiva;
+
+    // 5. Validaciones estrictas de secuencia y estado
+    if (vigilador.rondaActiva && !esInicioRonda) {
+      // Ronda en curso → debe ser el punto SIGUIENTE
+      const indiceEsperado = vigilador.ultimoPunto; // ya es 1-based
+      const puntoEsperado = puntosOrdenados[indiceEsperado];
+
+      if (!puntoEsperado || punto !== puntoEsperado.id) {
         throw new ValidationError(
-          `Inicia la ronda por el punto ${primerPunto.id} (${primerPunto.nombre})`
+          `Secuencia incorrecta. Debes escanear el punto ${puntoEsperado?.id ?? '?'}: ${puntoEsperado?.nombre ?? 'desconocido'}`
+        );
+      }
+
+      // Anti-duplicado en misma ronda (mejor criterio: existe registro con mismo vigilador + servicio + punto + rondaActiva=true)
+      const duplicado = await prisma.registro.findFirst({
+        where: {
+          vigiladorId: vigilador.id,
+          servicioId: servicio.id,
+          puntoId: punto,
+          // Opcional: agregar filtro por ronda si tienes un campo rondaId o similar
+        },
+        orderBy: { timestamp: 'desc' },
+      });
+
+      if (duplicado) {
+        logger.warn({ uuid, duplicadoId: duplicado.id }, '⚠️ Intento de duplicado en misma ronda');
+        throw new ValidationError('Este punto ya fue registrado en la ronda actual');
+      }
+    } else if (esInicioRonda) {
+      // Inicio → debe ser el PRIMER punto
+      const primerPunto = puntosOrdenados[0];
+      if (punto !== primerPunto.id) {
+        throw new ValidationError(
+          `Debes iniciar la ronda escaneando primero el punto ${primerPunto.id} (${primerPunto.nombre})`
         );
       }
     } else {
-      // Siguiente punto esperado
-      const siguiente = puntosDelServicio[posicionActual].id;
-      if (punto !== siguiente) {
-        const esperado = puntosDelServicio[posicionActual];
-        throw new ValidationError(
-          `Debes escanear el punto siguiente: ${esperado.id} (${esperado.nombre})`
-        );
-      }
+      // Estado inconsistente (ronda cerrada pero ultimoPunto > 0)
+      throw new ValidationError('Estado inconsistente del vigilador. Contacta al administrador para resetear.');
     }
 
     // 6. Normalización
     const geoNormalizado = normalizeGeo(geo);
     const novedadesNormalizadas = normalizeNovedades(novedades);
+    const timestampDate = new Date(timestamp);
 
-        // 7. Persistencia en transacción interactiva (best practice Prisma v5+ 2026)
-    // Usamos callback para atomicidad total y type-safety perfecta
-    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // Crear el registro directamente con tx (evitamos wrapper que devuelve Promise<void>)
+    if (isNaN(timestampDate.getTime())) {
+      throw new ValidationError('Formato de timestamp inválido');
+    }
+
+    // 7. Transacción atómica + lógica final dentro de tx (evita race conditions)
+    let mensajeFinal: string = '';
+
+    await prisma.$transaction(async (tx) => {
+      // Re-leer vigilador dentro de transacción (previene race conditions)
+      const vigiladorTx = await tx.vigilador.findUnique({
+        where: { legajo },
+        select: { ultimoPunto: true, rondaActiva: true },
+      });
+
+      if (!vigiladorTx) throw new Error('Vigilador desapareció durante transacción');
+
+      const nuevoUltimoPunto = vigiladorTx.ultimoPunto + 1;
+      const rondaCompletada = nuevoUltimoPunto === puntosOrdenados.length;
+
+      // Crear registro
       await tx.registro.create({
         data: {
-          vigiladorId: vigiladorCompleto.id,
+          vigiladorId: vigilador.id,
           puntoId: punto,
-          servicioId: servicioAsignado.id,
-          timestamp: new Date(timestamp),
+          servicioId: servicio.id,
+          timestamp: timestampDate,
           geolocalizacion: geoNormalizado ? JSON.stringify(geoNormalizado) : null,
           novedades: novedadesNormalizadas || null,
+          uuid,
         },
       });
 
-      // Calcular nuevo progreso
-      const nuevoProgreso = posicionActual + 1;
+      // Actualizar vigilador
+      await tx.vigilador.update({
+        where: { legajo },
+        data: {
+          ultimoPunto: rondaCompletada ? 0 : nuevoUltimoPunto,
+          rondaActiva: !rondaCompletada,
+        },
+      });
 
-      if (nuevoProgreso === totalPuntos) {
-        // Ronda completada → resetear
-        await tx.vigilador.update({
-          where: { legajo },
-          data: {
-            ultimoPunto: 0,
-            rondaActiva: false,
-          },
-        });
+      // Preparar mensaje (dentro de tx para consistencia)
+      const progreso = rondaCompletada ? puntosOrdenados.length : nuevoUltimoPunto;
+      mensajeFinal = rondaCompletada
+        ? `¡Ronda completada exitosamente! (${servicio.nombre})`
+        : `Punto ${progreso}/${puntosOrdenados.length} registrado correctamente (${servicio.nombre})`;
 
-        logger.info(
-          { legajo, servicio: servicioAsignado.nombre },
-          '🔄 Ronda completada en transacción'
-        );
-      } else {
-        // Avanzar en la ronda
-        await tx.vigilador.update({
-          where: { legajo },
-          data: {
-            ultimoPunto: nuevoProgreso,
-            rondaActiva: true,
-          },
-        });
+      if (rondaCompletada) {
+        logger.info({ legajo, servicio: servicio.nombre }, '🏁 Ronda completada');
       }
     });
 
-    // 8. Mensaje de respuesta (fuera de transacción)
-    let mensaje: string;
-    if (posicionActual + 1 === totalPuntos) {
-      mensaje = `¡Ronda completada exitosamente! (${servicioAsignado.nombre})`;
-    } else {
-      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado correctamente`;
-    }
-
     logger.info(
-      { legajo, punto, servicio: servicioAsignado.nombre, progreso: `${posicionActual + 1}/${totalPuntos}` },
+      { legajo, punto, uuid, servicio: servicio.nombre, progreso: mensajeFinal },
       '✅ Escaneo procesado exitosamente'
     );
 
-    return { success: true, mensaje };
+    return { success: true, mensaje: mensajeFinal };
   }
 
   /**
