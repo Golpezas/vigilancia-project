@@ -2,7 +2,7 @@
 // Hook para auto-sync offline - Mejores prácticas 2026: Eventos nativos + timer polling + visibility change
 // Type-safety estricta, evitación de cascading renders con useCallback + efectos separados
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { syncPendingRegistros } from '../utils/offlineSync';
 import { db } from '../db/offlineDb';
 
@@ -14,6 +14,7 @@ import { db } from '../db/offlineDb';
  */
 export const useOfflineSync = () => {
   const [pendingCount, setPendingCount] = useState<number>(0);
+  const initializedRef = useRef(false);
 
   // Función memoizada para actualizar contador (estable)
   const updatePendingCount = useCallback(async () => {
@@ -30,11 +31,17 @@ export const useOfflineSync = () => {
 
   // Efecto principal: sync inicial + listeners + timer
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     console.log('[OFFLINE HOOK] Montado - forzando sync y conteo inicial');
 
-    // Sync y conteo inicial (forzado)
+    // Sync inicial
     syncPendingRegistros()
-      .then(() => updatePendingCount())
+      .then(() => {
+        console.log('[OFFLINE INIT] Sync inicial completado');
+        updatePendingCount(); // Reconteo después de sync
+      })
       .catch(err => console.error('[OFFLINE INIT ERROR]', err));
 
     // Listener reconexión
