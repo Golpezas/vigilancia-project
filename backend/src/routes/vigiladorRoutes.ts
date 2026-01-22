@@ -140,23 +140,19 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
       }
     });
 
+    // Respuesta final con mensajes claros y sin ambigüedad
     const total = registros.length;
     const synced = syncedUuids.length;
 
     let message = '';
     if (synced === total) {
-      // Todo salió perfecto
-      if (total === 1) {
-        message = 'Punto procesado y registrado correctamente';
-      } else {
-        message = `Todos los ${total} puntos procesados correctamente`;
-      }
+      message = total === 1 
+        ? 'Punto procesado y registrado correctamente' 
+        : `Todos los ${total} puntos procesados correctamente`;
     } else if (synced > 0) {
-      // Algunos OK, otros duplicados o fallidos
-      message = `${synced} de ${total} registros sincronizados. Algunos ya estaban procesados (duplicados)`;
+      message = `${synced} de ${total} registros sincronizados. Algunos ya estaban procesados o fallaron validación.`;
     } else {
-      // Nada se sincronizó
-      message = 'Ningún registro se sincronizó (posible duplicado o error de validación)';
+      message = 'Ningún registro se sincronizó (verifica duplicados o secuencia)';
     }
 
     return res.status(200).json({
@@ -164,6 +160,7 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
       syncedUuids,
       message,
     });
+    
   } catch (err: any) {
     console.error('[SUBMIT-BATCH ERROR]', {
       message: err.message,

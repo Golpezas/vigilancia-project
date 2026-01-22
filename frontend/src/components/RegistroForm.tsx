@@ -111,23 +111,37 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         // Sync inmediato si online
         if (navigator.onLine) {
           try {
-            const response = await api.post('/submit-batch', { registros: [registro] });
+            const response = await api.post('/vigilador/submit-batch', { registros: [registro] });
+
+            console.log('[SYNC RESPONSE]', response.data);
 
             if (response.data.success) {
               await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
-              successMessage = response.data.message || 'Registro enviado exitosamente'; // ← Usa el mensaje del backend
+              successMessage = response.data.message || 'Registro enviado exitosamente';
             } else {
-              throw new Error(response.data.message || response.data.error || 'Error del servidor');
+              // Backend rechazó (ej: duplicado o secuencia)
+              throw new Error(response.data.message || response.data.error || 'Rechazado por el servidor');
             }
           } catch (syncError: unknown) {
-            let displayMsg = 'Error al sincronizar: el registro queda pendiente.';
-            if (isAxiosError(syncError) && syncError.response?.data?.error) {
-              displayMsg = syncError.response.data.error; // Mensaje directo del backend (ej: "Debes escanear punto 5 antes de 4")
+            console.error('[SYNC ERROR]', syncError);
+
+            let displayMsg = 'Error al sincronizar. El registro queda guardado localmente y se reintentará.';
+            
+            if (isAxiosError(syncError) && syncError.response?.data) {
+              const backendMsg = syncError.response.data.message || syncError.response.data.error;
+              if (backendMsg) {
+                displayMsg = backendMsg; // ej: "Inconsistencia en orden: Debes escanear el punto 2 antes de 1..."
+              } else if (syncError.response.status === 400) {
+                displayMsg = 'Datos inválidos o secuencia incorrecta';
+              }
             }
+
             onError(displayMsg);
-            // No throw: registro ya guardado local
+            // NO throw → registro queda local (synced: 0) para reintento
           }
         }
+
+        onSuccess(successMessage);
 
         onSuccess(successMessage);
       } catch (error: unknown) {
