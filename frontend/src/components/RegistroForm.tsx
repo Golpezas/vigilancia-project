@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useFormik } from 'formik';
 import { z } from 'zod';
 import { isAxiosError } from 'axios';
-import { v4 as uuidv4 } from 'uuid'; // ← Importamos uuid v4 (instalado en frontend)
+import { v4 as uuidv4 } from 'uuid';
 import api from '../services/api';
 import { db } from '../db/offlineDb';
 
@@ -77,8 +77,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
       setSubmitting(true);
 
       try {
-        // Generamos UUID UNA SOLA VEZ por submit
-        const uuid = uuidv4();
+        const uuid = uuidv4(); // Generado una vez
 
         const registro = {
           nombre: values.nombre.trim(),
@@ -87,70 +86,56 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           novedades: values.novedades?.trim() ?? undefined,
           timestamp: new Date().toISOString(),
           geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : undefined,
-          uuid, // ← UUID generado aquí (idempotencia garantizada)
+          uuid,
           createdAt: new Date().toISOString(),
           synced: 0,
         };
 
-        console.log('📤 Preparando registro con UUID:', {
-          uuid: registro.uuid,
-          punto,
-          legajo: registro.legajo,
-          timestamp: registro.timestamp,
-        });
+        // Validación local: ¿ya existe este punto en ronda activa? (IndexedDB)
+        const duplicadosLocales = await db.registros
+          .where('legajo')
+          .equals(registro.legajo)
+          .filter((r) => r.punto === punto && r.synced === 0) // Solo pendientes (ronda activa)
+          .toArray();
 
-        // Siempre guardar localmente primero (offline-first)
+        if (duplicadosLocales.length > 0) {
+          throw new Error('Este punto ya fue registrado en esta ronda (pendiente de sync).');
+        }
+
+        // Guardar local
         await db.registros.put(registro);
-        console.log('💾 Registro guardado localmente (IndexedDB)', { uuid: registro.uuid });
+        console.log('💾 Registro guardado localmente', { uuid });
 
-        let successMessage = 'Registro guardado localmente. Se sincronizará automáticamente cuando haya conexión.';
+        let successMessage = 'Registro guardado localmente. Se sincronizará automáticamente.';
 
-        // Intentar sincronización inmediata si está online
+        // Sync inmediato si online
         if (navigator.onLine) {
-          console.log('[SYNC] Intentando envío inmediato al backend');
           try {
-            const response = await api.post('/submit-batch', {
-              registros: [registro],
-            });
-
-            console.log('[SYNC SUCCESS]', {
-              status: response.status,
-              data: response.data,
-            });
+            const response = await api.post('/submit-batch', { registros: [registro] });
 
             if (response.data.success) {
-              // Marcar como sincronizado (usa 1 en lugar de true para consistencia numérica)
-              await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
-              successMessage = response.data.message || 'Registro enviado y confirmado por el servidor';
+              await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
+              successMessage = response.data.message || 'Registro enviado exitosamente';
             } else {
-              throw new Error(response.data.error || 'Respuesta inválida del servidor');
+              throw new Error(response.data.error || 'Error del servidor');
             }
           } catch (syncError: unknown) {
-            console.error('[SYNC ERROR]', syncError);
-            let displayMsg = 'Error al sincronizar con el servidor. El registro queda guardado localmente y se reintentará.';
-
-            if (isAxiosError(syncError) && syncError.response) {
-              const { data, status } = syncError.response;
-              if (status === 400 || status === 403) {
-                // Errores de validación/secuencia del backend → mostramos mensaje claro
-                displayMsg = (data as Record<string, unknown>)?.error as string || displayMsg;
-              }
+            let displayMsg = 'Error al sincronizar: el registro queda pendiente.';
+            if (isAxiosError(syncError) && syncError.response?.data?.error) {
+              displayMsg = syncError.response.data.error; // Mensaje directo del backend (ej: "Debes escanear punto 5 antes de 4")
             }
-
             onError(displayMsg);
-            // No lanzamos error fatal: el registro ya está guardado localmente
+            // No throw: registro ya guardado local
           }
-        } else {
-          console.log('[OFFLINE] Registro solo local - sync pendiente');
         }
 
         onSuccess(successMessage);
       } catch (error: unknown) {
-        let displayMsg = 'Error al procesar el registro. Intenta nuevamente.';
+        let displayMsg = 'Error al procesar el registro.';
         if (error instanceof Error) {
           displayMsg = error.message;
         }
-        console.error('❌ Error crítico en submit:', error);
+        console.error('❌ Error:', error);
         onError(displayMsg);
       } finally {
         setSubmitting(false);

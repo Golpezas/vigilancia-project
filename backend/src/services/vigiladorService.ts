@@ -101,21 +101,35 @@ export class VigiladorService {
         );
       }
 
-      // Anti-duplicado en misma ronda (mejor criterio: existe registro con mismo vigilador + servicio + punto + rondaActiva=true)
+      // Anti-duplicado: solo en la ronda actual (inferido por tiempo reciente)
+      const tiempoInicioRondaAprox = new Date(vigilador.updatedAt);
+      tiempoInicioRondaAprox.setHours(tiempoInicioRondaAprox.getHours() - 24); // ventana generosa de 24h
+
       const duplicado = await prisma.registro.findFirst({
         where: {
           vigiladorId: vigilador.id,
           servicioId: servicio.id,
           puntoId: punto,
-          // Opcional: agregar filtro por ronda si tienes un campo rondaId o similar
+          timestamp: {
+            gte: tiempoInicioRondaAprox, // solo registros desde que empezó la ronda aprox
+          },
         },
         orderBy: { timestamp: 'desc' },
       });
 
       if (duplicado) {
-        logger.warn({ uuid, duplicadoId: duplicado.id }, '⚠️ Intento de duplicado en misma ronda');
-        throw new ValidationError('Este punto ya fue registrado en la ronda actual');
+        logger.warn(
+          {
+            uuid,
+            duplicadoId: duplicado.id,
+            duplicadoTimestamp: duplicado.timestamp,
+            vigiladorUpdatedAt: vigilador.updatedAt,
+          },
+          '⚠️ Intento de duplicado en ronda activa detectado'
+        );
+        throw new ValidationError(`El punto ${punto} ya fue escaneado en esta ronda activa.`);
       }
+      
     } else if (esInicioRonda) {
       // Inicio → debe ser el PRIMER punto
       const primerPunto = puntosOrdenados[0];
