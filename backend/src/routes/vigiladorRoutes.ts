@@ -127,14 +127,21 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
           },
         });
 
-        // 6. Actualizar vigilador: avanza ultimoPunto y setea rondaActiva true
+        // 6. Actualizar vigilador: avanza ultimoPunto y cierra ronda si es el último punto
+        const nuevoUltimoPunto = reg.punto;
+        const rondaCompletada = nuevoUltimoPunto === puntosOrdenados[puntosOrdenados.length - 1]; // último en la secuencia
+
         await tx.vigilador.update({
           where: { id: vigilador.id },
           data: {
-            ultimoPunto: reg.punto,
-            rondaActiva: true, // Activa/mantiene al registrar punto
+            ultimoPunto: rondaCompletada ? 0 : nuevoUltimoPunto,
+            rondaActiva: !rondaCompletada,
           },
         });
+
+if (rondaCompletada) {
+  console.log(`Ronda completada para vigilador ${reg.legajo} - punto ${reg.punto}`);
+}
 
         syncedUuids.push(reg.uuid);
       }
@@ -160,7 +167,7 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
       syncedUuids,
       message,
     });
-    
+
   } catch (err: any) {
     console.error('[SUBMIT-BATCH ERROR]', {
       message: err.message,

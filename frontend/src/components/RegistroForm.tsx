@@ -113,31 +113,31 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           try {
             const response = await api.post('/vigilador/submit-batch', { registros: [registro] });
 
-            console.log('[SYNC RESPONSE]', response.data);
-
             if (response.data.success) {
               await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
               successMessage = response.data.message || 'Registro enviado exitosamente';
             } else {
-              // Backend rechazó (ej: duplicado o secuencia)
-              throw new Error(response.data.message || response.data.error || 'Rechazado por el servidor');
+              // Backend rechazó → usar su mensaje exacto
+              const backendError = response.data.error || response.data.message || 'Rechazado por el servidor';
+              throw new Error(backendError);
             }
           } catch (syncError: unknown) {
-            console.error('[SYNC ERROR]', syncError);
+            let displayMsg = 'Error al sincronizar: el registro queda pendiente.';
 
-            let displayMsg = 'Error al sincronizar. El registro queda guardado localmente y se reintentará.';
-            
-            if (isAxiosError(syncError) && syncError.response?.data) {
-              const backendMsg = syncError.response.data.message || syncError.response.data.error;
-              if (backendMsg) {
-                displayMsg = backendMsg; // ej: "Inconsistencia en orden: Debes escanear el punto 2 antes de 1..."
-              } else if (syncError.response.status === 400) {
-                displayMsg = 'Datos inválidos o secuencia incorrecta';
+            if (isAxiosError(syncError)) {
+              if (syncError.response?.data?.message) {
+                displayMsg = syncError.response.data.message; // ej: "Inconsistencia en orden..."
+              } else if (syncError.response?.data?.error) {
+                displayMsg = syncError.response.data.error;
+              } else if (syncError.code === 'ECONNABORTED') {
+                displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
+              } else if (syncError.response?.status === 400) {
+                displayMsg = 'Validación fallida: revisa los datos o el orden de escaneo';
               }
             }
 
             onError(displayMsg);
-            // NO throw → registro queda local (synced: 0) para reintento
+            // Registro queda local (synced: 0) → botón aparece con mensaje claro
           }
         }
 
