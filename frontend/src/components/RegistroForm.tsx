@@ -115,9 +115,9 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
 
             if (response.data.success) {
               await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
-              successMessage = response.data.message || 'Registro enviado exitosamente';
+              successMessage = response.data.message || 'Registro enviado exitosamente'; // ← Usa el mensaje del backend
             } else {
-              throw new Error(response.data.error || 'Error del servidor');
+              throw new Error(response.data.message || response.data.error || 'Error del servidor');
             }
           } catch (syncError: unknown) {
             let displayMsg = 'Error al sincronizar: el registro queda pendiente.';
