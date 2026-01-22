@@ -35,7 +35,7 @@ export const syncPendingRegistros = async (): Promise<void> => {
     const syncedUuids: string[] = response.data.syncedUuids || [];
     await db.transaction('rw', db.registros, async () => {
       for (const uuid of syncedUuids) {
-        await db.registros.where('uuid').equals(uuid).modify({ synced: true });
+        await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
       }
     });
 

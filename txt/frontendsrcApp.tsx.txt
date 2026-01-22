@@ -1,12 +1,11 @@
 // src/App.tsx
-// Orquestador principal con estado normalizado, render condicional y handlers type-safe (2026 best practices: no side-effects, DRY)
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLogin } from './components/AdminLogin';
-import { useOfflineSync } from './hooks/useOfflineSync'; // Ajusta path
+import { db } from './db/offlineDb'; // Asegúrate de importar db
+import api from './services/api';
 
 function App() {
   const [punto, setPunto] = useState<number | null>(null);
@@ -14,15 +13,92 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(!!localStorage.getItem('adminToken'));
   const [token, setToken] = useState<string | null>(localStorage.getItem('adminToken'));
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncLoading, setSyncLoading] = useState(false);
 
-  useOfflineSync(); // Auto-sync en background
+  // Cargar pendientes reactivamente
+  const loadPendingCount = async () => {
+    try {
+      const count = await db.registros.where('synced').equals(0).count();
+      setPendingCount(count);
+      console.log('[PENDIENTES] Conteo actual:', count);
+    } catch (err) {
+      console.error('[PENDIENTES ERROR]', err);
+      setPendingCount(0);
+    }
+  };
+
+  useEffect(() => {
+    loadPendingCount();
+
+    // Recargar al volver a la pestaña (focus)
+    window.addEventListener('focus', loadPendingCount);
+    // También al online (reconexión)
+    window.addEventListener('online', loadPendingCount);
+
+    return () => {
+      window.removeEventListener('focus', loadPendingCount);
+      window.removeEventListener('online', loadPendingCount);
+    };
+  }, []);
+
+  const handleSyncNow = async () => {
+    if (pendingCount === 0) return;
+
+    setSyncLoading(true);
+    setError(null);
+
+    try {
+      const pendientes = await db.registros.where('synced').equals(0).toArray();
+      if (pendientes.length === 0) {
+        setPendingCount(0);
+        return;
+      }
+
+      const payload = pendientes.map(reg => ({
+        uuid: reg.uuid,
+        nombre: reg.nombre,
+        legajo: reg.legajo,
+        punto: reg.punto,
+        novedades: reg.novedades,
+        timestamp: reg.timestamp,
+        geo: reg.geo,
+      }));
+
+      console.log('[SYNC MANUAL] Enviando', pendientes.length, 'registros');
+
+      const response = await api.post('/vigilador/submit-batch', { registros: payload });
+
+      if (response.data.success) {
+        const syncedUuids = response.data.syncedUuids || pendientes.map(r => r.uuid);
+        await db.registros.where('uuid').anyOf(syncedUuids).modify({ synced: 1 });
+        setPendingCount(0);
+        setMensaje('Sincronización manual exitosa');
+      } else {
+        throw new Error(response.data.message || 'Error en respuesta');
+      }
+    } catch (err: unknown) {
+      console.error('[SYNC MANUAL ERROR]', err);
+      const errorMessage = err instanceof Error ? err.message : 'Error al sincronizar manualmente. Intenta más tarde.';
+      const axiosError = err as { response?: { data?: { error?: string } } };
+      setError(
+        axiosError?.response?.data?.error ||
+        errorMessage ||
+        'Error al sincronizar manualmente. Intenta más tarde.'
+      );
+    } finally {
+      setSyncLoading(false);
+      // Recargar conteo por si acaso
+      loadPendingCount();
+    }
+  };
 
   const handleAdminLogin = (newToken: string) => {
     localStorage.setItem('adminToken', newToken);
     setToken(newToken);
     setIsAdminMode(true);
-    setError(null);  // Limpia error
-    setMensaje(null);  // Limpia mensaje viejo
+    setError(null);
+    setMensaje(null);
   };
 
   const handleAdminLogout = () => {
@@ -45,6 +121,7 @@ function App() {
     setMensaje(msg);
     setPunto(null);
     setError(null);
+    loadPendingCount(); // Recargar después de éxito
   };
 
   const handleError = (err: string) => setError(err);
@@ -63,6 +140,21 @@ function App() {
           >
             Ingresar como Administrador
           </button>
+        )}
+
+        {pendingCount > 0 && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-yellow-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-3 z-50">
+            <span>Pendientes: {pendingCount}</span>
+            <button
+              onClick={handleSyncNow}
+              disabled={syncLoading}
+              className={`bg-white text-yellow-600 px-4 py-1 rounded-md font-medium hover:bg-gray-100 transition ${
+                syncLoading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+            >
+              {syncLoading ? 'Sincronizando...' : 'Sincronizar ahora'}
+            </button>
+          </div>
         )}
 
         {mensaje && (

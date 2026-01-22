@@ -1,5 +1,9 @@
 // prisma/schema.prisma - Fase 2: Multi-servicio con puntos personalizados
 // Mejores prácticas 2026: Relación many-to-many explícita (tabla intermedia), auditoría automática, índices optimizados
+// Optimizaciones: Agregado @@index([uuid]) para queries idempotentes rápidas (batch sync)
+//               Índice compuesto para anti-duplicados (vigiladorId + uuid)
+//               Constraint en Punto.nombre @unique ya existe, ok
+// Depuración: Agrego createdBy opcional para audit futuro (e.g., UserId)
 
 generator client {
   provider = "prisma-client-js"
@@ -20,7 +24,7 @@ model Servicio {
   registros   Registro[]
 
   // ── Relación bidireccional con User ────────────────────────────────────────
-  users User[] @relation("UserServicio") // ← ¡Este campo faltaba!
+  users User[] @relation("UserServicio")
 
   @@map("servicio")
 }
@@ -33,9 +37,8 @@ model Vigilador {
   rondaActiva Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
-  servicioId String
-  servicio   Servicio @relation(fields: [servicioId], references: [id])
+  servicioId  String
+  servicio    Servicio @relation(fields: [servicioId], references: [id])
 
   registros Registro[]
 
@@ -49,7 +52,7 @@ model Punto {
   updatedAt DateTime @updatedAt
 
   registros Registro[]
-  servicios ServicioPunto[] // ← Relación opuesta completa
+  servicios ServicioPunto[] // Relación opuesta
 
   @@map("punto")
 }
@@ -75,25 +78,27 @@ model Registro {
   updatedAt       DateTime @updatedAt
   geolocalizacion String?
   novedades       String?
-  uuid            String?  @unique   // ← debe estar aquí
+  uuid            String?  @unique // Idempotencia clave
+  createdBy       String?  // Opcional: Para audit (UserId futuro)
 
-  vigilador       Vigilador @relation(fields: [vigiladorId], references: [id])
-  punto           Punto     @relation(fields: [puntoId], references: [id])
-  servicio        Servicio  @relation(fields: [servicioId], references: [id])
+  vigilador Vigilador @relation(fields: [vigiladorId], references: [id])
+  punto     Punto     @relation(fields: [puntoId], references: [id])
+  servicio  Servicio  @relation(fields: [servicioId], references: [id])
 
   @@index([vigiladorId, timestamp])
   @@index([vigiladorId, createdAt])
   @@index([servicioId])
+  @@index([uuid]) // Nuevo: Perf para idempotencia en batch
+  @@index([vigiladorId, uuid]) // Nuevo: Anti-duplicados por vigilador
   @@map("registro")
 }
 
 model User {
-  id       String @id @default(uuid())
-  email    String @unique
-  password String
-  role     Role   @default(CLIENT)
-
-  servicioId String? // FK opcional
+  id         String   @id @default(uuid())
+  email      String   @unique
+  password   String
+  role       Role     @default(CLIENT)
+  servicioId String?  // FK opcional
   servicio   Servicio? @relation("UserServicio", fields: [servicioId], references: [id])
 
   createdAt DateTime @default(now())

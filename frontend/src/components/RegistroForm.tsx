@@ -102,54 +102,112 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           throw new Error('Este punto ya fue registrado en esta ronda (pendiente de sync).');
         }
 
-        // Guardar local
+        // Siempre guardar localmente (offline-first)
         await db.registros.put(registro);
         console.log('💾 Registro guardado localmente', { uuid });
 
-        let successMessage = 'Registro guardado localmente. Se sincronizará automáticamente.';
+        let successMessage = '';
+        let hasInternet = navigator.onLine;
 
-        // Sync inmediato si online
-        if (navigator.onLine) {
+        if (hasInternet) {
+          console.log('[DEBUG] Intentando sync inmediato (online detectado)');
           try {
             const response = await api.post('/vigilador/submit-batch', { registros: [registro] });
 
+            console.log('[SYNC SUCCESS] Respuesta backend:', {
+              status: response.status,
+              data: response.data,
+            });
+
             if (response.data.success) {
-              await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
-              successMessage = response.data.message || 'Registro enviado exitosamente';
+              // Marcar como sincronizado
+              await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
+              successMessage = response.data.message || 'Registro enviado exitosamente al servidor';
             } else {
-              // Backend rechazó → usar su mensaje exacto
-              const backendError = response.data.error || response.data.message || 'Rechazado por el servidor';
-              throw new Error(backendError);
+              throw new Error(response.data.error || 'Respuesta no success');
             }
           } catch (syncError: unknown) {
-            let displayMsg = 'Error al sincronizar: el registro queda pendiente.';
+            console.error('[SYNC ERROR] Detalle:', syncError);
 
-            if (isAxiosError(syncError)) {
-              if (syncError.response?.data?.message) {
-                displayMsg = syncError.response.data.message; // ej: "Inconsistencia en orden..."
-              } else if (syncError.response?.data?.error) {
-                displayMsg = syncError.response.data.error;
-              } else if (syncError.code === 'ECONNABORTED') {
-                displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
-              } else if (syncError.response?.status === 400) {
-                displayMsg = 'Validación fallida: revisa los datos o el orden de escaneo';
+            let errMsg = 'Error desconocido';
+            let code: string | undefined;
+            let responseStatus: number | undefined;
+
+            if (syncError instanceof Error) errMsg = syncError.message;
+
+            if (isAxiosError(syncError) && syncError.response) {
+              const { data, status } = syncError.response;
+              code = syncError.code;
+              responseStatus = status;
+
+              if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
+                errMsg = data.error;
+              } else {
+                errMsg = `Error del servidor (código ${status})`;
               }
             }
 
-            onError(displayMsg);
-            // Registro queda local (synced: 0) → botón aparece con mensaje claro
+            let displayMsg = errMsg;
+            if (errMsg.includes('no pertenece') || errMsg.includes('siguiente') || errMsg.includes('Inicia la ronda')) {
+              displayMsg = errMsg; // Mensaje claro del backend
+            } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
+              displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
+            } else if (responseStatus === 500) {
+              displayMsg = 'Error interno del servidor. Intenta más tarde.';
+            } else {
+              displayMsg = 'Error al sincronizar. El registro queda guardado localmente y se reintentará.';
+            }
+
+            onError(displayMsg); // Muestra el mensaje personalizado (incluye errores de orden)
+            hasInternet = false; // Tratamos como offline si falló la conexión
           }
+        } else {
+          console.log('[OFFLINE] Sin conexión detectada - modo local puro');
         }
 
-        onSuccess(successMessage);
+        // Mensaje final según si se sincronizó o no
+        successMessage = successMessage || 'Registro guardado localmente. Se sincronizará automáticamente cuando haya conexión.';
 
         onSuccess(successMessage);
       } catch (error: unknown) {
-        let displayMsg = 'Error al procesar el registro.';
-        if (error instanceof Error) {
-          displayMsg = error.message;
+        // Tu manejo de errores original completo (intacto)
+        let errMsg = 'Error desconocido';
+        let code: string | undefined;
+        let responseData: unknown;
+        let responseStatus: number | undefined;
+
+        if (error instanceof Error) errMsg = error.message;
+
+        if (isAxiosError(error) && error.response) {
+          const { data, status } = error.response;
+          code = error.code;
+          responseData = data;
+          responseStatus = status;
+
+          if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
+            errMsg = data.error;
+          } else {
+            errMsg = `Error del servidor (código ${status})`;
+          }
         }
-        console.error('❌ Error:', error);
+
+        let displayMsg = errMsg;
+        if (errMsg.includes('no pertenece') || errMsg.includes('siguiente') || errMsg.includes('Inicia la ronda')) {
+          displayMsg = errMsg;
+        } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
+          displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
+        } else if (responseStatus === 500) {
+          displayMsg = 'Error interno del servidor. Intenta más tarde.';
+        }
+
+        console.error('❌ Error en submit:', {
+          originalMessage: errMsg,
+          code,
+          status: responseStatus,
+          response: responseData,
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+
         onError(displayMsg);
       } finally {
         setSubmitting(false);

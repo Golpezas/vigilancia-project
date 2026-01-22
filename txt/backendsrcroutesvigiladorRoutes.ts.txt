@@ -52,42 +52,122 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
         });
 
         if (existing) {
-          syncedUuids.push(reg.uuid); // Ya estaba, lo consideramos "sincronizado"
+          syncedUuids.push(reg.uuid);
           continue;
         }
 
-        // 2. Buscar vigilador para obtener IDs y servicioId
-        const vigilador = await tx.vigilador.findUnique({
-          where: { legajo: reg.legajo },
-          select: { id: true, servicioId: true },
+        // 2. Relevamiento de información: obtener secuencia de puntos del servicio ordenada (best practice: cacheable en prod)
+        const punto = await tx.punto.findUnique({
+          where: { id: reg.punto },
+          include: { servicios: true }, // Relación many-to-many
         });
 
-        if (!vigilador) {
-          throw new Error(`Vigilador con legajo ${reg.legajo} no encontrado`);
+        if (!punto || punto.servicios.length === 0) {
+          throw new Error(`Punto ${reg.punto} no encontrado o sin servicio asignado`);
         }
 
-        // 3. Crear registro usando relaciones connect (checked mode)
+        const servicioId = punto.servicios[0].servicioId; // Asume uno (ajusta si multi-servicio)
+
+        const secuenciaPuntos = await tx.servicioPunto.findMany({
+          where: { servicioId },
+          orderBy: { punto: { id: 'asc' } }, // Normalización: orden por ID ascendente (secuencial)
+          select: { puntoId: true },
+        });
+
+        if (secuenciaPuntos.length === 0) {
+          throw new Error(`Servicio ${servicioId} sin puntos asignados`);
+        }
+
+        const puntosOrdenados = secuenciaPuntos.map(sp => sp.puntoId); // [4,5,6] para Cliente Sur
+
+        // 3. Crear/obtener vigilador (upsert con creación automática)
+        const vigilador = await tx.vigilador.upsert({
+          where: { legajo: reg.legajo },
+          update: {},
+          create: {
+            nombre: reg.nombre,
+            legajo: reg.legajo,
+            ultimoPunto: 0, // Inicializa en 0 para nuevo
+            rondaActiva: false, // Inicial false, se activa al registrar primer punto
+            servicio: { connect: { id: servicioId } },
+          },
+          select: { id: true, servicioId: true, ultimoPunto: true, rondaActiva: true },
+        });
+
+        // 4. Validación de orden secuencial por servicio (no saltos)
+        const indiceActual = puntosOrdenados.indexOf(reg.punto);
+        if (indiceActual === -1) {
+          throw new Error(`Punto ${reg.punto} no pertenece al servicio ${servicioId}`);
+        }
+
+        let indiceEsperado = vigilador.ultimoPunto === 0 ? 0 : indiceActual; // Para inicio (ultimoPunto=0), espera el primer punto del servicio (indice 0)
+
+        if (vigilador.ultimoPunto !== 0) {
+          indiceEsperado = puntosOrdenados.indexOf(vigilador.ultimoPunto) + 1;
+          if (indiceEsperado >= puntosOrdenados.length) {
+            throw new Error('Ronda completada. Inicia una nueva ronda.');
+          }
+        }
+
+        if (indiceActual !== indiceEsperado) {
+          const puntoEsperadoId = puntosOrdenados[indiceEsperado];
+          throw new Error(`Inconsistencia en orden: Debes escanear el punto ${puntoEsperadoId} antes de ${reg.punto}. Inicia la ronda si es necesario.`);
+        }
+
+        // 5. Crear registro (normalizado)
         await tx.registro.create({
           data: {
             vigilador: { connect: { id: vigilador.id } },
             punto: { connect: { id: reg.punto } },
-            servicio: { connect: { id: vigilador.servicioId } }, // ← connect a servicio usando ID del vigilador
-            timestamp: reg.timestamp, // ya transformado a Date
+            servicio: { connect: { id: servicioId } },
+            timestamp: reg.timestamp,
             geolocalizacion: reg.geo ? JSON.stringify(reg.geo) : null,
             novedades: reg.novedades,
             uuid: reg.uuid,
           },
         });
 
+        // 6. Actualizar vigilador: avanza ultimoPunto y cierra ronda si es el último punto
+        const nuevoUltimoPunto = reg.punto;
+        const rondaCompletada = nuevoUltimoPunto === puntosOrdenados[puntosOrdenados.length - 1]; // último en la secuencia
+
+        await tx.vigilador.update({
+          where: { id: vigilador.id },
+          data: {
+            ultimoPunto: rondaCompletada ? 0 : nuevoUltimoPunto,
+            rondaActiva: !rondaCompletada,
+          },
+        });
+
+if (rondaCompletada) {
+  console.log(`Ronda completada para vigilador ${reg.legajo} - punto ${reg.punto}`);
+}
+
         syncedUuids.push(reg.uuid);
       }
     });
 
+    // Respuesta final con mensajes claros y sin ambigüedad
+    const total = registros.length;
+    const synced = syncedUuids.length;
+
+    let message = '';
+    if (synced === total) {
+      message = total === 1 
+        ? 'Punto procesado y registrado correctamente' 
+        : `Todos los ${total} puntos procesados correctamente`;
+    } else if (synced > 0) {
+      message = `${synced} de ${total} registros sincronizados. Algunos ya estaban procesados o fallaron validación.`;
+    } else {
+      message = 'Ningún registro se sincronizó (verifica duplicados o secuencia)';
+    }
+
     return res.status(200).json({
-      success: true,
+      success: synced > 0,
       syncedUuids,
-      message: `Procesados ${syncedUuids.length} registros (algunos posiblemente duplicados)`,
+      message,
     });
+
   } catch (err: any) {
     console.error('[SUBMIT-BATCH ERROR]', {
       message: err.message,
