@@ -136,13 +136,18 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
 
               if (isAxiosError(syncError) && syncError.response) {
                 const { data, status } = syncError.response;
-                code = syncError.code;
                 responseStatus = status;
 
-                if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
-                  errMsg = data.error; // Captura mensaje exacto como "Inconsistencia en orden..."
-                } else {
-                  errMsg = `Error del servidor (código ${status})`;
+                if (status === 400 && data.error) {
+                  errMsg = data.error; // e.g., 'Siguiente punto esperado: 3...'
+                  // Error lógico: NO activa offline, borra local si ya guardado
+                  await db.registros.where('uuid').equals(registro.uuid).delete();
+                  console.log('[ERROR LÓGICO] Borrado local - mostrando mensaje backend');
+                  onError(errMsg); // Muestra directo
+                  return; // Sale del catch sin fallback offline
+                } else if (status >= 500 || code === 'ECONNABORTED') {
+                  errMsg = 'Error de red/servidor - modo offline activado';
+                  // Deja pendiente
                 }
               }
 

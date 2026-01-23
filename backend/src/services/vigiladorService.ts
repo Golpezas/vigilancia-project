@@ -120,14 +120,14 @@ export class VigiladorService {
       }
     }
 
-    // 6. Validación de secuencia (mejorada: más flexible + logging detallado)
+    // 6. Validación de secuencia (mejorada: reset implícito para nueva ronda + logging detallado)
     const puntosOrdenados = puntosDelServicio.map(p => ({
       id: p.id,
       nombre: p.nombre,
     }));
 
     const totalPuntos = puntosOrdenados.length;
-    const posicionActual = vigiladorCompleto.ultimoPunto; // 0 = ronda no iniciada
+    let posicionActual = vigiladorCompleto.ultimoPunto;
 
     logger.debug({
       legajo,
@@ -142,8 +142,18 @@ export class VigiladorService {
     let esperadoId: number;
     let mensajeError: string;
 
+    // Caso 1: Ronda no iniciada o intento de reset con punto 1
+    if (punto === puntosOrdenados[0].id && posicionActual !== 0) {
+      // Reset implícito: Si escanean primer punto pero ronda atascada, resetea y inicia nueva
+      await prisma.vigilador.update({
+        where: { legajo },
+        data: { ultimoPunto: 0, rondaActiva: false },
+      });
+      logger.info({ legajo, punto }, '🔄 Ronda reseteada implícitamente para inicio nuevo');
+      posicionActual = 0; // Actualiza local para proceder
+    }
+
     if (posicionActual === 0) {
-      // Ronda no iniciada → debe empezar por el primer punto
       esperadoId = puntosOrdenados[0].id;
       if (punto !== esperadoId) {
         mensajeError = `Debes iniciar la ronda por el punto ${esperadoId} (${puntosOrdenados[0].nombre})`;
@@ -151,13 +161,12 @@ export class VigiladorService {
         throw new ValidationError(mensajeError);
       }
     } else {
-      // Ronda activa → debe ser el siguiente en secuencia
       if (posicionActual >= totalPuntos) {
         logger.error({ legajo, ultimoPunto: posicionActual, total: totalPuntos }, 'Estado inconsistente: ultimoPunto >= total puntos');
         throw new ValidationError('Estado de ronda inconsistente - contacta administrador');
       }
 
-      esperadoId = puntosOrdenados[posicionActual].id; // el siguiente es index = ultimoPunto
+      esperadoId = puntosOrdenados[posicionActual].id;
       if (punto !== esperadoId) {
         mensajeError = `Siguiente punto esperado: ${esperadoId} (${puntosOrdenados[posicionActual].nombre}). No puedes escanear ${punto} ahora.`;
         logger.warn({
@@ -170,7 +179,7 @@ export class VigiladorService {
       }
     }
 
-    // Si llegamos aquí → secuencia OK
+    // Secuencia OK
     logger.info({
       legajo,
       puntoRegistrado: punto,
