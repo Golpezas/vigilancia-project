@@ -152,15 +152,15 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
 
               if (isNetworkError) {
                 displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
-                // Deja pendiente (no borres)
+                // Deja pendiente
               } else {
-                // Error lógico (e.g., secuencia): Borra local para evitar pendientes falsos
+                // Error lógico (e.g., secuencia 400): Borra local + muestra mensaje backend
                 await db.registros.where('uuid').equals(registro.uuid).delete();
-                console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación backend');
-                displayMsg = errMsg; // Muestra "Inconsistencia en orden..." directamente
+                console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación');
+                displayMsg = errMsg; // e.g., "Debes escanear el punto 3..."
               }
 
-              onError(displayMsg);
+              onError(displayMsg); // o onSuccess si quieres diferenciar
             }
         } else {
           console.log('[OFFLINE] Sin conexión detectada - modo local puro');
