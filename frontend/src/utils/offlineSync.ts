@@ -30,7 +30,7 @@ export const syncPendingRegistros = async (): Promise<void> => {
     }));
 
     // CORRECCIÓN: Endpoint correcto → '/submit-batch' (coincide con backend /api/submit-batch)
-    const response = await api.post('/submit-batch', { registros: payload });
+    const response = await api.post('/submit-batch', { registros: payload }); // Asegúrate /submit-batch (sin /vigilador)
 
     const syncedUuids: string[] = response.data.syncedUuids || [];
     await db.transaction('rw', db.registros, async () => {

@@ -4,8 +4,13 @@ import { QRScanner } from './components/QRScanner';
 import { RegistroForm } from './components/RegistroForm';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLogin } from './components/AdminLogin';
-import { db } from './db/offlineDb'; // Asegúrate de importar db
+import { db } from './db/offlineDb';
 import api from './services/api';
+
+// Recomendación: mueve esto a src/services/api.ts o un archivo constants.ts
+const ENDPOINTS = {
+  SUBMIT_BATCH: '/submit-batch',  // ← CORRECTO (sin /vigilador)
+} as const;
 
 function App() {
   const [punto, setPunto] = useState<number | null>(null);
@@ -21,7 +26,7 @@ function App() {
     try {
       const count = await db.registros.where('synced').equals(0).count();
       setPendingCount(count);
-      console.log('[PENDIENTES] Conteo actual:', count);
+      console.log('[PENDIENTES] Conteo actualizado:', count);
     } catch (err) {
       console.error('[PENDIENTES ERROR]', err);
       setPendingCount(0);
@@ -31,9 +36,7 @@ function App() {
   useEffect(() => {
     loadPendingCount();
 
-    // Recargar al volver a la pestaña (focus)
     window.addEventListener('focus', loadPendingCount);
-    // También al online (reconexión)
     window.addEventListener('online', loadPendingCount);
 
     return () => {
@@ -47,6 +50,7 @@ function App() {
 
     setSyncLoading(true);
     setError(null);
+    setMensaje(null);
 
     try {
       const pendientes = await db.registros.where('synced').equals(0).toArray();
@@ -65,31 +69,58 @@ function App() {
         geo: reg.geo,
       }));
 
-      console.log('[SYNC MANUAL] Enviando', pendientes.length, 'registros');
+      console.log('[SYNC MANUAL] Enviando batch de', pendientes.length, 'registros → endpoint:', ENDPOINTS.SUBMIT_BATCH);
 
-      const response = await api.post('/vigilador/submit-batch', { registros: payload });
+      const response = await api.post(ENDPOINTS.SUBMIT_BATCH, { registros: payload });
+
+      console.log('[SYNC MANUAL] Respuesta backend:', response.data);
 
       if (response.data.success) {
         const syncedUuids = response.data.syncedUuids || pendientes.map(r => r.uuid);
         await db.registros.where('uuid').anyOf(syncedUuids).modify({ synced: 1 });
         setPendingCount(0);
-        setMensaje('Sincronización manual exitosa');
+        setMensaje('Sincronización manual exitosa ✓');
       } else {
-        throw new Error(response.data.message || 'Error en respuesta');
+        throw new Error(response.data.message || response.data.error || 'Respuesta no exitosa');
       }
     } catch (err: unknown) {
       console.error('[SYNC MANUAL ERROR]', err);
-      const errorMessage = err instanceof Error ? err.message : 'Error al sincronizar manualmente. Intenta más tarde.';
-      const axiosError = err as { response?: { data?: { error?: string } } };
-      setError(
-        axiosError?.response?.data?.error ||
-        errorMessage ||
-        'Error al sincronizar manualmente. Intenta más tarde.'
-      );
+
+      let errorMessage = 'Error al sincronizar. Intenta más tarde.';
+      let isLogicalError = false;
+
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+
+      // Diferenciamos errores lógicos (400) de red/500
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { status?: number; data?: { error?: string; message?: string } } };
+        const status = axiosErr.response?.status;
+        const backendMsg = axiosErr.response?.data?.error || axiosErr.response?.data?.message;
+
+        if (status === 400 && backendMsg) {
+          // Error lógico (secuencia, validación, etc.)
+          isLogicalError = true;
+          errorMessage = backendMsg; // ej: "Debes escanear el punto 3 antes de 1..."
+        } else if (status === 404) {
+          errorMessage = 'Ruta no encontrada - verifica configuración del endpoint';
+        } else if (status && status >= 500) {
+          errorMessage = 'Error interno del servidor. Intenta más tarde.';
+        }
+      }
+
+      setError(errorMessage);
+
+      // Si fue error lógico, podemos limpiar pendientes fallidos (opcional)
+      if (isLogicalError) {
+        // Opcional: borrar los que fallaron por validación para no acumular
+        // await db.registros.where('synced').equals(0).delete();
+        // loadPendingCount();
+      }
     } finally {
       setSyncLoading(false);
-      // Recargar conteo por si acaso
-      loadPendingCount();
+      loadPendingCount(); // Siempre recargamos conteo
     }
   };
 
@@ -121,7 +152,7 @@ function App() {
     setMensaje(msg);
     setPunto(null);
     setError(null);
-    loadPendingCount(); // Recargar después de éxito
+    loadPendingCount();
   };
 
   const handleError = (err: string) => setError(err);
