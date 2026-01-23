@@ -111,7 +111,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         if (navigator.onLine) {
           console.log('[DEBUG] Intentando sync inmediato (online detectado)');
           try {
-            const response = await api.post('/vigilador/submit-batch', { registros: [registro] });
+            const response = await api.post('/submit-batch', { registros: [registro] });
 
             console.log('[SYNC SUCCESS] Respuesta backend:', {
               status: response.status,

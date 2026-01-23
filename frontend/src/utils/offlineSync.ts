@@ -3,6 +3,7 @@
 
 import api from '../services/api';
 import { db } from '../db/offlineDb';
+import { isAxiosError } from 'axios';
 
 /**
  * Sincroniza todos los registros pendientes con el backend.
@@ -18,7 +19,6 @@ export const syncPendingRegistros = async (): Promise<void> => {
 
     console.log(`[SYNC] Enviando ${pendientes.length} registros pendientes...`);
 
-    // Preparar payload normalizado
     const payload = pendientes.map(reg => ({
       uuid: reg.uuid,
       nombre: reg.nombre,
@@ -29,9 +29,9 @@ export const syncPendingRegistros = async (): Promise<void> => {
       geo: reg.geo,
     }));
 
-    const response = await api.post('/vigilador/submit-batch', { registros: payload }); // Nuevo endpoint, ver backend
+    // CORRECCIÓN: Endpoint correcto → '/submit-batch' (coincide con backend /api/submit-batch)
+    const response = await api.post('/submit-batch', { registros: payload });
 
-    // Marcar como synced (basado en respuesta del backend)
     const syncedUuids: string[] = response.data.syncedUuids || [];
     await db.transaction('rw', db.registros, async () => {
       for (const uuid of syncedUuids) {
@@ -41,7 +41,12 @@ export const syncPendingRegistros = async (): Promise<void> => {
 
     console.log(`[SYNC] ${syncedUuids.length} registros sincronizados exitosamente`);
   } catch (err) {
-    console.warn('[SYNC ERROR] Fallo temporal al sincronizar:', err);
-    // No throw: se reintentará automáticamente después
+    const errorDetails = isAxiosError(err) 
+      ? { status: err.response?.status, message: err.response?.data?.error || err.message }
+      : { message: (err as Error).message };
+    console.warn('[SYNC ERROR] Fallo temporal al sincronizar:', errorDetails);
+    
+    // Retry simple: 1 intento extra después de 5s (evita bucles, pero ayuda en transitorios)
+    setTimeout(syncPendingRegistros, 5000);
   }
 };
