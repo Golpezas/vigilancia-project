@@ -134,29 +134,30 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
               let code: string | undefined;
               let responseStatus: number | undefined;
 
-              if (syncError instanceof Error) {
-                errMsg = syncError.message;
-              }
-
               if (isAxiosError(syncError) && syncError.response) {
                 const { data, status } = syncError.response;
                 code = syncError.code;
                 responseStatus = status;
 
                 if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
-                  errMsg = data.error;
+                  errMsg = data.error; // Captura mensaje exacto como "Inconsistencia en orden..."
                 } else {
                   errMsg = `Error del servidor (código ${status})`;
                 }
               }
 
+              // Diferencia errores lógicos (online) vs red (offline)
               let displayMsg = errMsg;
-              if (errMsg.includes('no pertenece') || errMsg.includes('siguiente') || errMsg.includes('Inicia la ronda')) {
-                displayMsg = errMsg; // Mensaje claro del backend
-              } else if (errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED') {
-                displayMsg = 'Timeout: Verifica tu conexión e intenta nuevamente';
-              } else if (responseStatus === 500) {
-                displayMsg = 'Error interno del servidor. Intenta más tarde.';
+              const isNetworkError = errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' || (responseStatus !== undefined && responseStatus >= 500);
+
+              if (isNetworkError) {
+                displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
+                // Deja pendiente (no borres)
+              } else {
+                // Error lógico (e.g., secuencia): Borra local para evitar pendientes falsos
+                await db.registros.where('uuid').equals(registro.uuid).delete();
+                console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación backend');
+                displayMsg = errMsg; // Muestra "Inconsistencia en orden..." directamente
               }
 
               onError(displayMsg);

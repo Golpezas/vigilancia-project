@@ -120,26 +120,63 @@ export class VigiladorService {
       }
     }
 
-    // 6. Validación de secuencia (tu lógica original)
-    const posicionActual = vigiladorCompleto.ultimoPunto;
-    const totalPuntos = puntosDelServicio.length;
+    // 6. Validación de secuencia (mejorada: más flexible + logging detallado)
+    const puntosOrdenados = puntosDelServicio.map(p => ({
+      id: p.id,
+      nombre: p.nombre,
+    }));
+
+    const totalPuntos = puntosOrdenados.length;
+    const posicionActual = vigiladorCompleto.ultimoPunto; // 0 = ronda no iniciada
+
+    logger.debug({
+      legajo,
+      rondaActiva: vigiladorCompleto.rondaActiva,
+      ultimoPunto: posicionActual,
+      totalPuntos,
+      puntoSolicitado: punto,
+      primerPunto: puntosOrdenados[0]?.id,
+      siguienteEsperado: posicionActual > 0 ? puntosOrdenados[posicionActual]?.id : puntosOrdenados[0]?.id,
+    }, '🔍 Validando secuencia de ronda');
+
+    let esperadoId: number;
+    let mensajeError: string;
 
     if (posicionActual === 0) {
-      if (punto !== puntosDelServicio[0].id) {
-        const primer = puntosDelServicio[0];
-        throw new ValidationError(
-          `Inicia por el punto ${primer.id} (${primer.nombre})`
-        );
+      // Ronda no iniciada → debe empezar por el primer punto
+      esperadoId = puntosOrdenados[0].id;
+      if (punto !== esperadoId) {
+        mensajeError = `Debes iniciar la ronda por el punto ${esperadoId} (${puntosOrdenados[0].nombre})`;
+        logger.warn({ esperado: esperadoId, recibido: punto }, '⚠️ Intento de inicio inválido');
+        throw new ValidationError(mensajeError);
       }
     } else {
-      const siguiente = puntosDelServicio[posicionActual].id;
-      if (punto !== siguiente) {
-        const esperado = puntosDelServicio[posicionActual];
-        throw new ValidationError(
-          `Siguiente punto: ${esperado.id} (${esperado.nombre})`
-        );
+      // Ronda activa → debe ser el siguiente en secuencia
+      if (posicionActual >= totalPuntos) {
+        logger.error({ legajo, ultimoPunto: posicionActual, total: totalPuntos }, 'Estado inconsistente: ultimoPunto >= total puntos');
+        throw new ValidationError('Estado de ronda inconsistente - contacta administrador');
+      }
+
+      esperadoId = puntosOrdenados[posicionActual].id; // el siguiente es index = ultimoPunto
+      if (punto !== esperadoId) {
+        mensajeError = `Siguiente punto esperado: ${esperadoId} (${puntosOrdenados[posicionActual].nombre}). No puedes escanear ${punto} ahora.`;
+        logger.warn({
+          esperado: esperadoId,
+          nombreEsperado: puntosOrdenados[posicionActual].nombre,
+          recibido: punto,
+          rondaActiva: vigiladorCompleto.rondaActiva,
+        }, '⚠️ Secuencia inválida detectada');
+        throw new ValidationError(mensajeError);
       }
     }
+
+    // Si llegamos aquí → secuencia OK
+    logger.info({
+      legajo,
+      puntoRegistrado: punto,
+      progresoActual: `${posicionActual + 1}/${totalPuntos}`,
+      rondaActiva: vigiladorCompleto.rondaActiva,
+    }, '✅ Secuencia validada correctamente');
 
     // 7. Nueva mejora: anti-duplicado en ronda actual (ventana temporal)
     const tiempoInicioRondaAprox = new Date(vigiladorCompleto.updatedAt);

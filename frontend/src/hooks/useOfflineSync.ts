@@ -57,6 +57,13 @@ export const useOfflineSync = () => {
         console.log('[POLL SYNC] Verificando pendientes periódicamente');
         await syncPendingRegistros();
         await updatePendingCount();
+        // Reintento: verificar pendientes después de actualizar
+        const count = await db.registros.where('synced').equals(0).count();
+        if (count > 0) { // Reintento si aún pendientes (transitorios)
+          console.log('[POLL RETRY] Pendientes persistentes → reintentando sync');
+          await syncPendingRegistros();
+          await updatePendingCount();
+        }
       }
     }, import.meta.env.DEV ? 15000 : 60000);
 
