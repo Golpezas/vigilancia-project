@@ -252,16 +252,14 @@ export class VigiladorService {
 
     // 11. Mensaje (mejorado: claro para final de ronda)
     let mensaje: string;
-    if (posicionActual + 1 === totalPuntos) {
-      mensaje = `¡Ronda finalizada correctamente! (${servicioAsignado.nombre}). Inicia nueva ronda cuando estés listo.`;
-    } else {
-      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado exitosamente. Siguiente: ${puntosOrdenados[posicionActual + 1].id} (${puntosOrdenados[posicionActual + 1].nombre}).`;
-    }
+    const progresoActual = posicionActual + 1;
+    const porcentaje = Math.round((progresoActual / totalPuntos) * 100);
 
-    logger.info(
-      { legajo, punto, servicio: servicioAsignado.nombre, progreso: `${posicionActual + 1}/${totalPuntos}` },
-      '✅ Escaneo procesado'
-    );
+    if (progresoActual === totalPuntos) {
+      mensaje = `🎉 Ronda finalizada al 100% (${servicioAsignado.nombre})! Has completado todos los puntos. Puedes iniciar una nueva ronda escaneando el punto 1.`;
+    } else {
+      mensaje = `Punto ${progresoActual}/${totalPuntos} registrado (${porcentaje}%). Siguiente esperado: ${puntosOrdenados[progresoActual].id} (${puntosOrdenados[progresoActual].nombre}).`;
+    }
 
     return { success: true, mensaje };
   }

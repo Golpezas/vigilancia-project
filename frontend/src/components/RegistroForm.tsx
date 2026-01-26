@@ -136,11 +136,17 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             }
 
             if (validated.data.success) {
+              // Usamos exactamente el mensaje que envía el backend (ya personalizado para ronda final)
               successMessage = validated.data.mensaje || 'Registro enviado exitosamente al servidor';
-              // COMENTADO TEMPORAL: Marcar synced (no necesario en online puro)
-              // await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
+
+              // Opcional: enriquecer visualmente si detectamos "finalizada" (por si backend cambia)
+              if (successMessage.includes('finalizada') || successMessage.includes('completada')) {
+                successMessage = `🎉 ${successMessage} ¡Excelente trabajo!`;
+              }
+
+              onSuccess(successMessage);
             } else {
-              throw new Error(validated.data.error || 'Rechazado por el servidor sin mensaje específico');
+              throw new Error(validated.data.error || 'Rechazado por el servidor');
             }
           } catch (syncError: unknown) {
             console.error('[SYNC ERROR] Detalle:', syncError);

@@ -149,7 +149,16 @@ function App() {
   const handleScan = (p: number) => setPunto(p);
 
   const handleSuccess = (msg: string) => {
-    setMensaje(msg);
+    let displayMsg = msg;
+
+    // Enriquecemos visualmente según contenido
+    if (msg.includes('finalizada') || msg.includes('completada') || msg.includes('100%')) {
+      displayMsg = `🎉 ${msg}\n\nPuedes iniciar una nueva ronda escaneando el primer punto.`;
+    } else if (msg.includes('Siguiente esperado')) {
+      displayMsg = `${msg}\n\nContinúa con el siguiente punto.`;
+    }
+
+    setMensaje(displayMsg);
     setPunto(null);
     setError(null);
     loadPendingCount();
