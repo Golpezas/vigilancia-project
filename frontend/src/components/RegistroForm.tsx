@@ -132,16 +132,25 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             let code: string | undefined;
             let responseStatus: number | undefined;
 
+            if (syncError instanceof Error) {
+              errMsg = syncError.message;
+            }
+
             if (isAxiosError(syncError) && syncError.response) {
               const { data, status } = syncError.response;
               code = syncError.code;
               responseStatus = status;
 
-              // Validación Zod-like para data.error
-              if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
-                errMsg = data.error; // e.g., "Punto ya escaneado. Siguiente: 3 (Nombre)"
+              // Validación Zod para data (normalización estricta, best practice runtime type-safety)
+              const ErrorResponseSchema = z.object({
+                error: z.string().min(1, 'Mensaje de error inválido'),
+              });
+
+              const validatedData = ErrorResponseSchema.safeParse(data);
+              if (validatedData.success) {
+                errMsg = validatedData.data.error; // e.g., 'Inconsistencia en orden: Debes escanear el punto 3...'
               } else {
-                errMsg = `Error del servidor (código ${status}) - respuesta inválida.`;
+                errMsg = `Error del servidor (código ${status}) - respuesta inválida: ${JSON.stringify(validatedData.error.issues)}`;
               }
             }
 
@@ -149,11 +158,15 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             const isNetworkError = errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' || (responseStatus !== undefined && responseStatus >= 500);
 
             if (isNetworkError) {
-              displayMsg = 'Error de conexión: Intenta más tarde.'; // Temporal: no offline completo, solo mensaje
-              // COMENTADO: Deja pendiente (para probar online puro)
-              // displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
+              displayMsg = 'Error de conexión: Intenta más tarde.';
+              // Deja pendiente si offline real (tu lógica original)
+            } else if (responseStatus === 400) {
+              // Lógico: Muestra errMsg backend directo, borra local (no pendientes)
+              await db.registros.where('uuid').equals(registro.uuid).delete();
+              console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación');
+              displayMsg = errMsg; // Muestra mensaje backend exacto
             } else {
-              displayMsg = errMsg; // Lógico: muestra mensaje backend directo, sin offline
+              displayMsg = errMsg; // Otros errors
             }
 
             onError(displayMsg);
