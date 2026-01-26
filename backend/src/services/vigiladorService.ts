@@ -202,11 +202,11 @@ export class VigiladorService {
     });
 
     if (duplicado) {
-      const siguienteIndex = posicionActual; // Para repetido, sugiere el esperado (no +1, ya que repetido es actual)
-      const siguienteId = puntosOrdenados[siguienteIndex]?.id || 'Completa ronda';
-      const siguienteNombre = puntosOrdenados[siguienteIndex]?.nombre || 'y inicia nueva';
-      mensajeError = `Punto ${punto} ya escaneado. Repite el siguiente esperado: ${siguienteId} (${siguienteNombre}).`;
-      logger.warn({ legajo, punto, duplicadoTimestamp: duplicado.timestamp }, '⚠️ Duplicado detectado');
+      const siguienteIndex = posicionActual + 1;
+      const siguienteId = puntosOrdenados[siguienteIndex]?.id || 'Ronda completa';
+      const siguienteNombre = puntosOrdenados[siguienteIndex]?.nombre || ' - inicia nueva ronda';
+      mensajeError = `Punto ${punto} ya escaneado en esta ronda. Siguiente esperado: ${siguienteId} (${siguienteNombre}).`;
+      logger.warn({ legajo, punto, duplicadoTimestamp: duplicado.timestamp }, '⚠️ Duplicado detectado en ronda activa');
       throw new ValidationError(mensajeError);
     }
 
@@ -250,12 +250,12 @@ export class VigiladorService {
       }
     });
 
-    // 11. Mensaje
+    // 11. Mensaje (mejorado: claro para final de ronda)
     let mensaje: string;
     if (posicionActual + 1 === totalPuntos) {
-      mensaje = `¡Ronda completada! (${servicioAsignado.nombre})`;
+      mensaje = `¡Ronda finalizada correctamente! (${servicioAsignado.nombre}). Inicia nueva ronda cuando estés listo.`;
     } else {
-      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado`;
+      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado exitosamente. Siguiente: ${puntosOrdenados[posicionActual + 1].id} (${puntosOrdenados[posicionActual + 1].nombre}).`;
     }
 
     logger.info(

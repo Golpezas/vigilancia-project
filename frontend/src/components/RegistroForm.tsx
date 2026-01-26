@@ -132,17 +132,16 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             let code: string | undefined;
             let responseStatus: number | undefined;
 
-            if (syncError instanceof Error) errMsg = syncError.message;
-
             if (isAxiosError(syncError) && syncError.response) {
               const { data, status } = syncError.response;
               code = syncError.code;
               responseStatus = status;
 
+              // Validación Zod-like para data.error
               if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
-                errMsg = data.error; // Mensaje backend, ej: "Punto repetido. Siguiente: 3 (Nombre)"
+                errMsg = data.error; // e.g., "Punto ya escaneado. Siguiente: 3 (Nombre)"
               } else {
-                errMsg = `Error del servidor (código ${status})`;
+                errMsg = `Error del servidor (código ${status}) - respuesta inválida.`;
               }
             }
 
@@ -150,13 +149,14 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             const isNetworkError = errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' || (responseStatus !== undefined && responseStatus >= 500);
 
             if (isNetworkError) {
-              displayMsg = 'Error de conexión: Intenta más tarde.'; // Temporal: no offline
+              displayMsg = 'Error de conexión: Intenta más tarde.'; // Temporal: no offline completo, solo mensaje
+              // COMENTADO: Deja pendiente (para probar online puro)
+              // displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
             } else {
-              displayMsg = errMsg; // Lógico: muestra "Punto repetido..." sin guardar local
+              displayMsg = errMsg; // Lógico: muestra mensaje backend directo, sin offline
             }
 
             onError(displayMsg);
-            return; // Sale sin fallback
           }
         } else {
           onError('Sin conexión detectada - modo local puro temporalmente deshabilitado');
