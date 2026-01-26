@@ -77,7 +77,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
       setSubmitting(true);
 
       try {
-        const uuid = uuidv4();
+        const uuid = uuidv4(); // UUID para idempotencia (best practice anti-duplicados)
 
         const registro = {
           nombre: values.nombre.trim(),
@@ -88,10 +88,10 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : undefined,
           uuid,
           createdAt: new Date().toISOString(),
-          synced: 0, // Temporal: ignora synced para online puro
+          synced: 0, // Inicial: pendiente (modificar si synced)
         };
 
-        // Validación local duplicados (mantiene)
+        // Validación local temprana: Duplicados pendientes en IndexedDB (normalización para consistencia offline-online)
         const duplicadosLocales = await db.registros
           .where('legajo')
           .equals(registro.legajo)
@@ -99,17 +99,20 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           .toArray();
 
         if (duplicadosLocales.length > 0) {
-          throw new Error('Este punto ya fue registrado en esta ronda (pendiente de sync).');
+          const errMsg = 'Este punto ya fue registrado en esta ronda (pendiente de sync).';
+          console.warn('[VALIDACIÓN LOCAL] Duplicado detectado:', duplicadosLocales.length);
+          throw new Error(errMsg);
         }
 
-        // COMENTADO: Guardado local siempre (remueve offline para probar online puro)
+        // COMENTADO TEMPORAL: Guardado local siempre (offline-first) – descomenta cuando online estable
         // await db.registros.put(registro);
         // console.log('💾 Registro guardado localmente', { uuid });
 
-        let successMessage = 'Registro enviado exitosamente al servidor'; // Default online
+        let successMessage = 'Registro enviado exitosamente al servidor'; // Default para online puro
 
         if (navigator.onLine) {
-          console.log('[DEBUG] Intentando sync inmediato (online detectado)');
+          console.log('[DEBUG] Intentando sync inmediato (online detectado)', { uuid, punto });
+
           try {
             const response = await api.post('/submit-batch', { registros: [registro] });
 
@@ -118,12 +121,26 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
               data: response.data,
             });
 
-            if (response.data.success) {
-              // COMENTADO: Marcar synced (no necesario en online puro temporal)
+            // Schema Zod para normalización response (runtime type-safety, best practice para evitar invalid data)
+            const ResponseSchema = z.object({
+              success: z.boolean(),
+              mensaje: z.string().optional(), // Usa 'mensaje' como en tu backend (success case)
+              error: z.string().optional(), // Para fallback si !success
+            });
+
+            const validated = ResponseSchema.safeParse(response.data);
+            if (!validated.success) {
+              const validationIssues = JSON.stringify(validated.error.issues);
+              console.warn('[RESPONSE VALIDATION ERROR]', validationIssues);
+              throw new Error(`Respuesta inválida del backend: ${validationIssues}`);
+            }
+
+            if (validated.data.success) {
+              successMessage = validated.data.mensaje || 'Registro enviado exitosamente al servidor';
+              // COMENTADO TEMPORAL: Marcar synced (no necesario en online puro)
               // await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
-              successMessage = response.data.message || 'Registro enviado exitosamente al servidor';
             } else {
-              throw new Error(response.data.error || response.data.message || 'Rechazado por el servidor');
+              throw new Error(validated.data.error || 'Rechazado por el servidor sin mensaje específico');
             }
           } catch (syncError: unknown) {
             console.error('[SYNC ERROR] Detalle:', syncError);
@@ -141,7 +158,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
               code = syncError.code;
               responseStatus = status;
 
-              // Validación Zod para data (normalización estricta, best practice runtime type-safety)
+              // Schema Zod para error response (normalización estricta)
               const ErrorResponseSchema = z.object({
                 error: z.string().min(1, 'Mensaje de error inválido'),
               });
@@ -159,17 +176,19 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
 
             if (isNetworkError) {
               displayMsg = 'Error de conexión: Intenta más tarde.';
-              // Deja pendiente si offline real (tu lógica original)
+              // COMENTADO TEMPORAL: Deja pendiente si offline real (descomenta cuando integres offline)
+              // displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
             } else if (responseStatus === 400) {
-              // Lógico: Muestra errMsg backend directo, borra local (no pendientes)
+              displayMsg = errMsg; // Muestra mensaje lógico backend exacto
+              // Borra local si ya guardado (evita pendientes falsos)
               await db.registros.where('uuid').equals(registro.uuid).delete();
               console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación');
-              displayMsg = errMsg; // Muestra mensaje backend exacto
             } else {
               displayMsg = errMsg; // Otros errors
             }
 
             onError(displayMsg);
+            return; // Sale para no llamar onSuccess
           }
         } else {
           onError('Sin conexión detectada - modo local puro temporalmente deshabilitado');
@@ -178,7 +197,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
 
         onSuccess(successMessage);
       } catch (error: unknown) {
-        // Tu manejo de errores original completo (intacto)
+        // Manejo general para errors antes de sync (e.g., validación local, UUID gen)
         let errMsg = 'Error desconocido';
         let code: string | undefined;
         let responseData: unknown;

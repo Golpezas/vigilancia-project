@@ -168,17 +168,29 @@ if (rondaCompletada) {
       message,
     });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[SUBMIT-BATCH ERROR]', {
-      message: err.message,
-      stack: err.stack,
+      message: (err as Error).message,
+      stack: (err as Error).stack,
       body: req.body,
     });
 
-    const status = err instanceof z.ZodError ? 400 : 500;
+    let status = 500;
+    let errorMsg = 'Error interno al procesar batch de registros';
+
+    // Handle Zod validation errors
+    if (err instanceof z.ZodError) {
+      status = 400;
+      errorMsg = `Error de validación: ${err.errors[0].message}`;
+    } else if (err instanceof Error && err.message) {
+      // Handle custom application errors (validation, not found, etc.)
+      status = 400;
+      errorMsg = err.message; // e.g., 'Inconsistencia en orden: Debes escanear el punto 3...'
+    }
+
     return res.status(status).json({
       success: false,
-      error: err.message || 'Error interno al procesar batch de registros',
+      error: errorMsg,
     });
   }
 }) as RequestHandler);
