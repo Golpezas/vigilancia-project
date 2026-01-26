@@ -202,11 +202,11 @@ export class VigiladorService {
     });
 
     if (duplicado) {
-      const siguienteIndex = posicionActual + 1;
-      const siguienteId = puntosOrdenados[siguienteIndex]?.id || 'Completa la ronda';
-      const siguienteNombre = puntosOrdenados[siguienteIndex]?.nombre || 'y inicia una nueva';
-      mensajeError = `Punto ${punto} ya escaneado en esta ronda. Siguiente: ${siguienteId} (${siguienteNombre}).`;
-      logger.warn({ legajo, punto, duplicadoTimestamp: duplicado.timestamp }, '⚠️ Duplicado detectado en ronda');
+      const siguienteIndex = posicionActual; // Para repetido, sugiere el esperado (no +1, ya que repetido es actual)
+      const siguienteId = puntosOrdenados[siguienteIndex]?.id || 'Completa ronda';
+      const siguienteNombre = puntosOrdenados[siguienteIndex]?.nombre || 'y inicia nueva';
+      mensajeError = `Punto ${punto} ya escaneado. Repite el siguiente esperado: ${siguienteId} (${siguienteNombre}).`;
+      logger.warn({ legajo, punto, duplicadoTimestamp: duplicado.timestamp }, '⚠️ Duplicado detectado');
       throw new ValidationError(mensajeError);
     }
 

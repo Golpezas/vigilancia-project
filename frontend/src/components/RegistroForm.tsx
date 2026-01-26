@@ -77,7 +77,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
       setSubmitting(true);
 
       try {
-        const uuid = uuidv4(); // Generado una vez
+        const uuid = uuidv4();
 
         const registro = {
           nombre: values.nombre.trim(),
@@ -88,25 +88,25 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           geo: geo.lat && geo.long ? { lat: geo.lat, long: geo.long } : undefined,
           uuid,
           createdAt: new Date().toISOString(),
-          synced: 0,
+          synced: 0, // Temporal: ignora synced para online puro
         };
 
-        // Validación local: ¿ya existe este punto en ronda activa? (IndexedDB)
+        // Validación local duplicados (mantiene)
         const duplicadosLocales = await db.registros
           .where('legajo')
           .equals(registro.legajo)
-          .filter((r) => r.punto === punto && r.synced === 0) // Solo pendientes (ronda activa)
+          .filter((r) => r.punto === punto && r.synced === 0)
           .toArray();
 
         if (duplicadosLocales.length > 0) {
           throw new Error('Este punto ya fue registrado en esta ronda (pendiente de sync).');
         }
 
-        // Siempre guardar localmente (offline-first)
-        await db.registros.put(registro);
-        console.log('💾 Registro guardado localmente', { uuid });
+        // COMENTADO: Guardado local siempre (remueve offline para probar online puro)
+        // await db.registros.put(registro);
+        // console.log('💾 Registro guardado localmente', { uuid });
 
-        let successMessage = 'Registro guardado localmente. Se sincronizará automáticamente cuando haya conexión.';
+        let successMessage = 'Registro enviado exitosamente al servidor'; // Default online
 
         if (navigator.onLine) {
           console.log('[DEBUG] Intentando sync inmediato (online detectado)');
@@ -119,13 +119,11 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             });
 
             if (response.data.success) {
-              // Marcar como sincronizado
-              await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
+              // COMENTADO: Marcar synced (no necesario en online puro temporal)
+              // await db.registros.where('uuid').equals(registro.uuid).modify({ synced: 1 });
               successMessage = response.data.message || 'Registro enviado exitosamente al servidor';
             } else {
-              // Rechazo del backend (ej: duplicado o secuencia) → no marcar synced, mostrar error y dejar pendiente
-              const backendError = response.data.error || response.data.message || 'Rechazado por el servidor';
-              throw new Error(backendError);
+              throw new Error(response.data.error || response.data.message || 'Rechazado por el servidor');
             }
           } catch (syncError: unknown) {
             console.error('[SYNC ERROR] Detalle:', syncError);
@@ -134,9 +132,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             let code: string | undefined;
             let responseStatus: number | undefined;
 
-            if (syncError instanceof Error) {
-              errMsg = syncError.message;
-            }
+            if (syncError instanceof Error) errMsg = syncError.message;
 
             if (isAxiosError(syncError) && syncError.response) {
               const { data, status } = syncError.response;
@@ -144,30 +140,27 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
               responseStatus = status;
 
               if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
-                errMsg = data.error; // Captura mensaje backend, ej: "Punto repetido. Siguiente: 2 (Nombre)"
+                errMsg = data.error; // Mensaje backend, ej: "Punto repetido. Siguiente: 3 (Nombre)"
               } else {
                 errMsg = `Error del servidor (código ${status})`;
               }
             }
 
-            // Diferencia errores lógicos (online) vs red (offline)
             let displayMsg = errMsg;
             const isNetworkError = errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' || (responseStatus !== undefined && responseStatus >= 500);
 
             if (isNetworkError) {
-              displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
-              // Deja pendiente (no borra)
+              displayMsg = 'Error de conexión: Intenta más tarde.'; // Temporal: no offline
             } else {
-              // Error lógico (e.g., duplicado/secuencia 400): Borra local para no dejar pendientes falsos
-              await db.registros.where('uuid').equals(registro.uuid).delete();
-              console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación backend');
-              displayMsg = errMsg; // Muestra "Punto ya escaneado. Siguiente: X (Nombre)"
+              displayMsg = errMsg; // Lógico: muestra "Punto repetido..." sin guardar local
             }
 
             onError(displayMsg);
+            return; // Sale sin fallback
           }
         } else {
-          console.log('[OFFLINE] Sin conexión detectada - modo local puro');
+          onError('Sin conexión detectada - modo local puro temporalmente deshabilitado');
+          return;
         }
 
         onSuccess(successMessage);
