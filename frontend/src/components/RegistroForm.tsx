@@ -138,6 +138,8 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             if (validated.data.success) {
               // Usamos exactamente el mensaje que envía el backend (ya personalizado para ronda final)
               successMessage = validated.data.mensaje || 'Registro enviado exitosamente al servidor';
+              console.log('[SUCCESS MESSAGE FROM BACKEND]', successMessage); // ← Para verificar en consola
+              onSuccess(successMessage);
 
               // Opcional: enriquecer visualmente si detectamos "finalizada" (por si backend cambia)
               if (successMessage.includes('finalizada') || successMessage.includes('completada')) {

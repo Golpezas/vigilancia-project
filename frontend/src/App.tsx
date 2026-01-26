@@ -149,18 +149,21 @@ function App() {
   const handleScan = (p: number) => setPunto(p);
 
   const handleSuccess = (msg: string) => {
-    let displayMsg = msg;
+    // Limpieza previa (elimina mensajes viejos)
+    setMensaje('');
+    setError(null);
 
-    // Enriquecemos visualmente según contenido
+    let displayMsg = msg || 'Registro enviado exitosamente al servidor';
+
+    // Enriquecimiento visual según contenido backend
     if (msg.includes('finalizada') || msg.includes('completada') || msg.includes('100%')) {
-      displayMsg = `🎉 ${msg}\n\nPuedes iniciar una nueva ronda escaneando el primer punto.`;
+      displayMsg = `🎉 ${msg}\n\n¡Felicitaciones! Ronda terminada. Escanea el punto 1 para comenzar una nueva.`;
     } else if (msg.includes('Siguiente esperado')) {
       displayMsg = `${msg}\n\nContinúa con el siguiente punto.`;
     }
 
     setMensaje(displayMsg);
     setPunto(null);
-    setError(null);
     loadPendingCount();
   };
 
@@ -198,12 +201,14 @@ function App() {
         )}
 
         {mensaje && (
-          <div className="mb-6 p-4 bg-green-800 rounded-lg text-center whitespace-pre-line">
+          <div className="mb-6 p-5 bg-gradient-to-r from-green-700 to-green-900 rounded-xl text-center shadow-lg whitespace-pre-line border border-green-500/30">
             {mensaje}
           </div>
         )}
         {error && (
-          <div className="mb-6 p-4 bg-red-800 rounded-lg text-center">{error}</div>
+          <div className="mb-6 p-5 bg-gradient-to-r from-red-700 to-red-900 rounded-xl text-center shadow-lg whitespace-pre-line border border-red-500/30">
+            {error}
+          </div>
         )}
 
         {isAdminMode ? (
