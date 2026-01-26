@@ -111,7 +111,7 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
 
         if (indiceActual !== indiceEsperado) {
           const puntoEsperadoId = puntosOrdenados[indiceEsperado];
-          throw new Error(`Inconsistencia en orden: Debes escanear el punto ${puntoEsperadoId} antes de ${reg.punto}. Inicia la ronda si es necesario.`);
+          throw new Error(`Inconsistencia en orden: Debes escanear el punto ${puntoEsperadoId}.`);
         }
 
         // 5. Crear registro (normalizado)
