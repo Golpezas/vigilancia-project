@@ -198,7 +198,9 @@ function App() {
         )}
 
         {mensaje && (
-          <div className="mb-6 p-4 bg-green-800 rounded-lg text-center">{mensaje}</div>
+          <div className="mb-6 p-4 bg-green-800 rounded-lg text-center whitespace-pre-line">
+            {mensaje}
+          </div>
         )}
         {error && (
           <div className="mb-6 p-4 bg-red-800 rounded-lg text-center">{error}</div>
