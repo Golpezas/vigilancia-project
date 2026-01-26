@@ -143,7 +143,7 @@ export class VigiladorService {
     let mensajeError: string;
 
     // Caso 1: Ronda no iniciada o intento de reset con punto 1
-    if (punto === puntosOrdenados[0].id && posicionActual !== 0) {
+    if (punto === puntosOrdenados[0]?.id && posicionActual !== 0) {
       // Reset implícito: Si escanean primer punto pero ronda atascada, resetea y inicia nueva
       await prisma.vigilador.update({
         where: { legajo },
@@ -154,9 +154,9 @@ export class VigiladorService {
     }
 
     if (posicionActual === 0) {
-      esperadoId = puntosOrdenados[0].id;
+      esperadoId = puntosOrdenados[0]?.id || 0; // Fallback seguro
       if (punto !== esperadoId) {
-        mensajeError = `Debes iniciar la ronda por el punto ${esperadoId} (${puntosOrdenados[0].nombre})`;
+        mensajeError = `Debes iniciar la ronda por el punto ${esperadoId} (${puntosOrdenados[0]?.nombre || 'desconocido'}).`;
         logger.warn({ esperado: esperadoId, recibido: punto }, '⚠️ Intento de inicio inválido');
         throw new ValidationError(mensajeError);
       }
@@ -168,7 +168,7 @@ export class VigiladorService {
 
       esperadoId = puntosOrdenados[posicionActual].id;
       if (punto !== esperadoId) {
-        mensajeError = `Siguiente punto esperado: ${esperadoId} (${puntosOrdenados[posicionActual].nombre}). No puedes escanear ${punto} ahora.`;
+        mensajeError = `Siguiente punto esperado: ${esperadoId} (${puntosOrdenados[posicionActual].nombre}). No puedes escanear ${punto} ahora. Inicia una nueva ronda si es necesario.`;
         logger.warn({
           esperado: esperadoId,
           nombreEsperado: puntosOrdenados[posicionActual].nombre,
@@ -179,7 +179,7 @@ export class VigiladorService {
       }
     }
 
-    // Secuencia OK
+    // Si llegamos aquí → secuencia OK
     logger.info({
       legajo,
       puntoRegistrado: punto,
@@ -187,7 +187,7 @@ export class VigiladorService {
       rondaActiva: vigiladorCompleto.rondaActiva,
     }, '✅ Secuencia validada correctamente');
 
-    // 7. Nueva mejora: anti-duplicado en ronda actual (ventana temporal)
+    // 7. Nueva mejora: anti-duplicado en ronda actual (ventana temporal) con sugerencia
     const tiempoInicioRondaAprox = new Date(vigiladorCompleto.updatedAt);
     tiempoInicioRondaAprox.setHours(tiempoInicioRondaAprox.getHours() - 24);
 
@@ -202,7 +202,12 @@ export class VigiladorService {
     });
 
     if (duplicado) {
-      throw new ValidationError(`Punto ${punto} ya escaneado en esta ronda activa`);
+      const siguienteIndex = posicionActual + 1;
+      const siguienteId = puntosOrdenados[siguienteIndex]?.id || 'Completa la ronda';
+      const siguienteNombre = puntosOrdenados[siguienteIndex]?.nombre || 'y inicia una nueva';
+      mensajeError = `Punto ${punto} ya escaneado en esta ronda. Siguiente: ${siguienteId} (${siguienteNombre}).`;
+      logger.warn({ legajo, punto, duplicadoTimestamp: duplicado.timestamp }, '⚠️ Duplicado detectado en ronda');
+      throw new ValidationError(mensajeError);
     }
 
     // 8. Idempotencia con UUID

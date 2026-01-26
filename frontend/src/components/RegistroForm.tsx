@@ -128,45 +128,44 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
               throw new Error(backendError);
             }
           } catch (syncError: unknown) {
-              console.error('[SYNC ERROR] Detalle:', syncError);
+            console.error('[SYNC ERROR] Detalle:', syncError);
 
-              let errMsg = 'Error desconocido';
-              let code: string | undefined;
-              let responseStatus: number | undefined;
+            let errMsg = 'Error desconocido';
+            let code: string | undefined;
+            let responseStatus: number | undefined;
 
-              if (isAxiosError(syncError) && syncError.response) {
-                const { data, status } = syncError.response;
-                responseStatus = status;
-
-                if (status === 400 && data.error) {
-                  errMsg = data.error; // e.g., 'Siguiente punto esperado: 3...'
-                  // Error lógico: NO activa offline, borra local si ya guardado
-                  await db.registros.where('uuid').equals(registro.uuid).delete();
-                  console.log('[ERROR LÓGICO] Borrado local - mostrando mensaje backend');
-                  onError(errMsg); // Muestra directo
-                  return; // Sale del catch sin fallback offline
-                } else if (status >= 500 || code === 'ECONNABORTED') {
-                  errMsg = 'Error de red/servidor - modo offline activado';
-                  // Deja pendiente
-                }
-              }
-
-              // Diferencia errores lógicos (online) vs red (offline)
-              let displayMsg = errMsg;
-              const isNetworkError = errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' || (responseStatus !== undefined && responseStatus >= 500);
-
-              if (isNetworkError) {
-                displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
-                // Deja pendiente
-              } else {
-                // Error lógico (e.g., secuencia 400): Borra local + muestra mensaje backend
-                await db.registros.where('uuid').equals(registro.uuid).delete();
-                console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación');
-                displayMsg = errMsg; // e.g., "Debes escanear el punto 3..."
-              }
-
-              onError(displayMsg); // o onSuccess si quieres diferenciar
+            if (syncError instanceof Error) {
+              errMsg = syncError.message;
             }
+
+            if (isAxiosError(syncError) && syncError.response) {
+              const { data, status } = syncError.response;
+              code = syncError.code;
+              responseStatus = status;
+
+              if (typeof data === 'object' && data !== null && 'error' in data && typeof data.error === 'string') {
+                errMsg = data.error; // Captura mensaje backend, ej: "Punto repetido. Siguiente: 2 (Nombre)"
+              } else {
+                errMsg = `Error del servidor (código ${status})`;
+              }
+            }
+
+            // Diferencia errores lógicos (online) vs red (offline)
+            let displayMsg = errMsg;
+            const isNetworkError = errMsg.toLowerCase().includes('timeout') || code === 'ECONNABORTED' || (responseStatus !== undefined && responseStatus >= 500);
+
+            if (isNetworkError) {
+              displayMsg = 'Sin conexión: Registro guardado localmente. Se sincronizará después.';
+              // Deja pendiente (no borra)
+            } else {
+              // Error lógico (e.g., duplicado/secuencia 400): Borra local para no dejar pendientes falsos
+              await db.registros.where('uuid').equals(registro.uuid).delete();
+              console.log('[ERROR LÓGICO] Registro local borrado - no synced por validación backend');
+              displayMsg = errMsg; // Muestra "Punto ya escaneado. Siguiente: X (Nombre)"
+            }
+
+            onError(displayMsg);
+          }
         } else {
           console.log('[OFFLINE] Sin conexión detectada - modo local puro');
         }
