@@ -108,7 +108,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
         // await db.registros.put(registro);
         // console.log('💾 Registro guardado localmente', { uuid });
 
-        let successMessage = 'Registro enviado exitosamente al servidor'; // Default para online puro
+        const successMessage = 'Registro enviado exitosamente al servidor'; // Default para online puro
 
         if (navigator.onLine) {
           console.log('[DEBUG] Intentando sync inmediato (online detectado)', { uuid, punto });
@@ -124,8 +124,16 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             // Schema Zod para normalización response (runtime type-safety, best practice para evitar invalid data)
             const ResponseSchema = z.object({
               success: z.boolean(),
-              mensaje: z.string().optional(), // Usa 'mensaje' como en tu backend (success case)
-              error: z.string().optional(), // Para fallback si !success
+              syncedUuids: z.array(z.string()).optional(),
+              results: z.array(
+                z.object({
+                  uuid: z.string(),
+                  success: z.boolean(),
+                  mensaje: z.string(),
+                })
+              ).optional(),
+              summary: z.string().optional(),
+              message: z.string().optional(), // fallback
             });
 
             const validated = ResponseSchema.safeParse(response.data);
@@ -136,20 +144,35 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
             }
 
             if (validated.data.success) {
-              // Usamos exactamente el mensaje que envía el backend (ya personalizado para ronda final)
-              successMessage = validated.data.mensaje || 'Registro enviado exitosamente al servidor';
-              console.log('[SUCCESS MESSAGE FROM BACKEND]', successMessage); // ← Para verificar en consola
-              onSuccess(successMessage);
+              let successMessage: string;
 
-              // Opcional: enriquecer visualmente si detectamos "finalizada" (por si backend cambia)
-              if (successMessage.includes('finalizada') || successMessage.includes('completada')) {
-                successMessage = `🎉 ${successMessage} ¡Excelente trabajo!`;
+              // Priorizamos results si existe (nueva estructura)
+              if (validated.data.results && validated.data.results.length > 0) {
+                const primerResultado = validated.data.results[0];
+                if (primerResultado.success) {
+                  successMessage = primerResultado.mensaje;
+                } else {
+                  throw new Error(primerResultado.mensaje || 'Error en el primer registro');
+                }
+              } 
+              // Fallback a message (estructura vieja)
+              else if (validated.data.message) {
+                successMessage = validated.data.message;
+              } 
+              else {
+                successMessage = 'Registro enviado exitosamente al servidor';
+              }
+
+              console.log('[SUCCESS MESSAGE FROM BACKEND]', successMessage);
+
+              // Enriquecimiento opcional (ya lo tienes, pero lo dejamos más simple)
+              if (successMessage.includes('completada') || successMessage.includes('100%')) {
+                successMessage = `🎉 ${successMessage}\n¡Excelente trabajo!`;
               }
 
               onSuccess(successMessage);
-            } else {
-              throw new Error(validated.data.error || 'Rechazado por el servidor');
             }
+
           } catch (syncError: unknown) {
             console.error('[SYNC ERROR] Detalle:', syncError);
 

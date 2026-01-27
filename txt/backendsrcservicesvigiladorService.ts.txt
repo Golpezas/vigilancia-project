@@ -120,28 +120,74 @@ export class VigiladorService {
       }
     }
 
-    // 6. Validación de secuencia (tu lógica original)
-    const posicionActual = vigiladorCompleto.ultimoPunto;
-    const totalPuntos = puntosDelServicio.length;
+    // 6. Validación de secuencia (mejorada: reset implícito para nueva ronda + logging detallado)
+    const puntosOrdenados = puntosDelServicio.map(p => ({
+      id: p.id,
+      nombre: p.nombre,
+    }));
+
+    const totalPuntos = puntosOrdenados.length;
+    let posicionActual = vigiladorCompleto.ultimoPunto;
+
+    logger.debug({
+      legajo,
+      rondaActiva: vigiladorCompleto.rondaActiva,
+      ultimoPunto: posicionActual,
+      totalPuntos,
+      puntoSolicitado: punto,
+      primerPunto: puntosOrdenados[0]?.id,
+      siguienteEsperado: posicionActual > 0 ? puntosOrdenados[posicionActual]?.id : puntosOrdenados[0]?.id,
+    }, '🔍 Validando secuencia de ronda');
+
+    let esperadoId: number;
+    let mensajeError: string;
+
+    // Caso 1: Ronda no iniciada o intento de reset con punto 1
+    if (punto === puntosOrdenados[0]?.id && posicionActual !== 0) {
+      // Reset implícito: Si escanean primer punto pero ronda atascada, resetea y inicia nueva
+      await prisma.vigilador.update({
+        where: { legajo },
+        data: { ultimoPunto: 0, rondaActiva: false },
+      });
+      logger.info({ legajo, punto }, '🔄 Ronda reseteada implícitamente para inicio nuevo');
+      posicionActual = 0; // Actualiza local para proceder
+    }
 
     if (posicionActual === 0) {
-      if (punto !== puntosDelServicio[0].id) {
-        const primer = puntosDelServicio[0];
-        throw new ValidationError(
-          `Inicia por el punto ${primer.id} (${primer.nombre})`
-        );
+      esperadoId = puntosOrdenados[0]?.id || 0; // Fallback seguro
+      if (punto !== esperadoId) {
+        mensajeError = `Debes iniciar la ronda por el punto ${esperadoId} (${puntosOrdenados[0]?.nombre || 'desconocido'}).`;
+        logger.warn({ esperado: esperadoId, recibido: punto }, '⚠️ Intento de inicio inválido');
+        throw new ValidationError(mensajeError);
       }
     } else {
-      const siguiente = puntosDelServicio[posicionActual].id;
-      if (punto !== siguiente) {
-        const esperado = puntosDelServicio[posicionActual];
-        throw new ValidationError(
-          `Siguiente punto: ${esperado.id} (${esperado.nombre})`
-        );
+      if (posicionActual >= totalPuntos) {
+        logger.error({ legajo, ultimoPunto: posicionActual, total: totalPuntos }, 'Estado inconsistente: ultimoPunto >= total puntos');
+        throw new ValidationError('Estado de ronda inconsistente - contacta administrador');
+      }
+
+      esperadoId = puntosOrdenados[posicionActual].id;
+      if (punto !== esperadoId) {
+        mensajeError = `Siguiente punto esperado: ${esperadoId} (${puntosOrdenados[posicionActual].nombre}). No puedes escanear ${punto} ahora. Inicia una nueva ronda si es necesario.`;
+        logger.warn({
+          esperado: esperadoId,
+          nombreEsperado: puntosOrdenados[posicionActual].nombre,
+          recibido: punto,
+          rondaActiva: vigiladorCompleto.rondaActiva,
+        }, '⚠️ Secuencia inválida detectada');
+        throw new ValidationError(mensajeError);
       }
     }
 
-    // 7. Nueva mejora: anti-duplicado en ronda actual (ventana temporal)
+    // Si llegamos aquí → secuencia OK
+    logger.info({
+      legajo,
+      puntoRegistrado: punto,
+      progresoActual: `${posicionActual + 1}/${totalPuntos}`,
+      rondaActiva: vigiladorCompleto.rondaActiva,
+    }, '✅ Secuencia validada correctamente');
+
+    // 7. Nueva mejora: anti-duplicado en ronda actual (ventana temporal) con sugerencia
     const tiempoInicioRondaAprox = new Date(vigiladorCompleto.updatedAt);
     tiempoInicioRondaAprox.setHours(tiempoInicioRondaAprox.getHours() - 24);
 
@@ -156,7 +202,12 @@ export class VigiladorService {
     });
 
     if (duplicado) {
-      throw new ValidationError(`Punto ${punto} ya escaneado en esta ronda activa`);
+      const siguienteIndex = posicionActual + 1;
+      const siguienteId = puntosOrdenados[siguienteIndex]?.id || 'Ronda completa';
+      const siguienteNombre = puntosOrdenados[siguienteIndex]?.nombre || ' - inicia nueva ronda';
+      mensajeError = `Punto ${punto} ya escaneado en esta ronda. Siguiente esperado: ${siguienteId} (${siguienteNombre}).`;
+      logger.warn({ legajo, punto, duplicadoTimestamp: duplicado.timestamp }, '⚠️ Duplicado detectado en ronda activa');
+      throw new ValidationError(mensajeError);
     }
 
     // 8. Idempotencia con UUID
@@ -199,17 +250,22 @@ export class VigiladorService {
       }
     });
 
-    // 11. Mensaje
+    // 11. Mensaje final (mejorado: claro, accionable, visual para UI)
     let mensaje: string;
-    if (posicionActual + 1 === totalPuntos) {
-      mensaje = `¡Ronda completada! (${servicioAsignado.nombre})`;
+    const progresoActual = posicionActual + 1;
+    const porcentaje = Math.round((progresoActual / totalPuntos) * 100);
+
+    if (progresoActual === totalPuntos) {
+      mensaje = `🎉 Ronda finalizada al ${porcentaje}% (${servicioAsignado.nombre})! Has completado todos los ${totalPuntos} puntos. ¡Excelente trabajo! Puedes iniciar una nueva ronda escaneando el punto 1 cuando estés listo.`;
     } else {
-      mensaje = `Punto ${posicionActual + 1}/${totalPuntos} registrado`;
+      const siguienteId = puntosOrdenados[progresoActual]?.id || '—';
+      const siguienteNombre = puntosOrdenados[progresoActual]?.nombre || '—';
+      mensaje = `Punto ${progresoActual}/${totalPuntos} registrado (${porcentaje}%). Siguiente esperado: ${siguienteId} (${siguienteNombre}). Continúa cuando puedas.`;
     }
 
     logger.info(
-      { legajo, punto, servicio: servicioAsignado.nombre, progreso: `${posicionActual + 1}/${totalPuntos}` },
-      '✅ Escaneo procesado'
+      { legajo, punto, servicio: servicioAsignado.nombre, progreso: `${progresoActual}/${totalPuntos} (${porcentaje}%)` },
+      '✅ Escaneo procesado exitosamente'
     );
 
     return { success: true, mensaje };

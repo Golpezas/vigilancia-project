@@ -7,11 +7,20 @@ import { isAxiosError } from 'axios';
 import { z } from 'zod'; // ← Agrega este import si no está
 
 // Schema Zod para validar response backend (best practice: type-safety runtime)
+// Schema Zod para validar response backend
 const SyncResponseSchema = z.object({
   success: z.boolean(),
   syncedUuids: z.array(z.string()).optional(),
   message: z.string().optional(),
   error: z.string().optional(),
+  // 👇 AGREGAMOS ESTA DEFINICIÓN
+  results: z.array(
+    z.object({
+      uuid: z.string(),
+      success: z.boolean(),
+      mensaje: z.string().optional(), // .optional() por si el backend a veces no manda mensaje
+    })
+  ).optional(), 
 });
 
 /**
@@ -51,15 +60,30 @@ export const syncPendingRegistros = async (): Promise<void> => {
 
     if (validated.data.success) {
       const syncedUuids: string[] = validated.data.syncedUuids || [];
+
+      // Logueamos mensajes detallados si existen
+      if (validated.data.results) {
+        validated.data.results.forEach(r => {
+          if (r.success) {
+            console.log(`[SYNC OK] ${r.uuid.slice(0,8)}...: ${r.mensaje}`);
+          } else {
+            console.warn(`[SYNC FAIL] ${r.uuid.slice(0,8)}...: ${r.mensaje}`);
+          }
+        });
+      }
+
       await db.transaction('rw', db.registros, async () => {
         for (const uuid of syncedUuids) {
           await db.registros.where('uuid').equals(uuid).modify({ synced: 1 });
         }
       });
-      console.log(`[SYNC] ${syncedUuids.length} registros sincronizados exitosamente`);
+
+      const count = syncedUuids.length;
+      console.log(`[SYNC] ${count} registros sincronizados exitosamente`);
     } else {
       throw new Error(validated.data.error || 'Sync fallido sin error especificado');
     }
+    
   } catch (err) {
     const errorDetails = isAxiosError(err) 
       ? { status: err.response?.status, message: err.response?.data?.error || err.message }

@@ -139,33 +139,115 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
           },
         });
 
-if (rondaCompletada) {
-  console.log(`Ronda completada para vigilador ${reg.legajo} - punto ${reg.punto}`);
-}
+        if (rondaCompletada) {
+          console.log(`Ronda completada para vigilador ${reg.legajo} - punto ${reg.punto}`);
+        }
 
         syncedUuids.push(reg.uuid);
       }
     });
 
-    // Respuesta final con mensajes claros y sin ambigüedad
+    // ────────────────────────────────────────────────────────────────
+    // Preparar respuesta detallada por registro
+    // ────────────────────────────────────────────────────────────────
+
+    const results: Array<{
+      uuid: string;
+      success: boolean;
+      mensaje: string;
+    }> = [];
+
+    // Nota: como estamos dentro de la transacción exitosa,
+    // todos los registros que llegaron aquí fueron procesados o ya existían
+    for (const reg of registros) {
+      const uuid = reg.uuid;
+
+      // Si ya existía → lo consideramos "exitoso" pero con mensaje de duplicado
+      if (await prisma.registro.findUnique({ where: { uuid } })) {
+        results.push({
+          uuid,
+          success: true,
+          mensaje: `Registro ya existía (idempotente) - punto ${reg.punto}`,
+        });
+        continue;
+      }
+
+      // Para los que se procesaron ahora → reconstruimos mensaje rico
+      // (usamos la misma info que ya calculamos antes en el loop)
+
+      const puntoActual = reg.punto;
+
+      // Obtenemos los puntos ordenados (reutilizamos lógica similar)
+      const puntoData = await prisma.punto.findUnique({
+        where: { id: puntoActual },
+        include: { servicios: true },
+      });
+
+      if (!puntoData || puntoData.servicios.length === 0) {
+        results.push({
+          uuid,
+          success: false,
+          mensaje: 'Error al generar mensaje: punto o servicio no encontrado',
+        });
+        continue;
+      }
+
+      const servicioId = puntoData.servicios[0].servicioId;
+      const secuencia = await prisma.servicioPunto.findMany({
+        where: { servicioId },
+        orderBy: { punto: { id: 'asc' } },
+        select: { puntoId: true },
+      });
+
+      const puntosOrdenados = secuencia.map(sp => sp.puntoId);
+      const indiceActual = puntosOrdenados.indexOf(puntoActual);
+
+      let mensaje = `Punto ${puntoActual} registrado correctamente.`;
+
+      if (indiceActual === puntosOrdenados.length - 1) {
+        // Es el último punto de la ronda
+        mensaje = `¡Ronda completada al 100%! 🎉 Punto ${puntoActual} fue el último.`;
+        mensaje += `\nPuedes iniciar una nueva ronda escaneando el punto ${puntosOrdenados[0] || 1}.`;
+      } else {
+        // Hay siguiente punto
+        const siguienteId = puntosOrdenados[indiceActual + 1];
+        if (siguienteId) {
+          mensaje += ` Siguiente esperado: punto ${siguienteId}.`;
+        }
+      }
+
+      results.push({
+        uuid,
+        success: true,
+        mensaje,
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Respuesta final mejorada
+    // ────────────────────────────────────────────────────────────────
+
     const total = registros.length;
     const synced = syncedUuids.length;
 
-    let message = '';
-    if (synced === total) {
-      message = total === 1 
-        ? 'Punto procesado y registrado correctamente' 
-        : `Todos los ${total} puntos procesados correctamente`;
-    } else if (synced > 0) {
-      message = `${synced} de ${total} registros sincronizados. Algunos ya estaban procesados o fallaron validación.`;
-    } else {
-      message = 'Ningún registro se sincronizó (verifica duplicados o secuencia)';
-    }
+    const summary =
+      synced === total
+        ? total === 1
+          ? 'Registro procesado correctamente'
+          : `Todos los ${total} puntos procesados correctamente`
+        : synced > 0
+          ? `${synced} de ${total} registros sincronizados`
+          : 'Ningún registro procesado (verifica duplicados o secuencia)';
+
+    // Para single submit (lo más común), devolvemos el mensaje del primer result
+    const mainMessage = total === 1 && results.length > 0 ? results[0].mensaje : null;
 
     return res.status(200).json({
       success: synced > 0,
       syncedUuids,
-      message,
+      results,           // ← nuevo campo: detalle por registro
+      summary,           // ← más claro que el message anterior
+      message: mainMessage || summary,  // compatibilidad con frontend actual
     });
 
   } catch (err: unknown) {
