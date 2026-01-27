@@ -151,6 +151,13 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           const first = parsed.data.results[0];
           if (first.success && first.mensaje) {
             successMsg = first.mensaje;
+
+            // Filtro para evitar mensajes demasiado técnicos (opcional pero recomendado)
+            if (successMsg.includes('idempotente') || successMsg.includes('ya existía')) {
+              successMsg = successMsg.replace(/\(idempotente\)/g, '').trim();
+              // Opcional: cambiar a algo más amigable
+              // successMsg = 'Este punto ya fue registrado antes. Todo en orden.';
+            }
           } else if (!first.success && first.mensaje) {
             throw new Error(first.mensaje);
           }
@@ -158,7 +165,7 @@ export const RegistroForm: React.FC<RegistroFormProps> = ({
           successMsg = parsed.data.message;
         }
 
-        // Enriquecimiento simple del mensaje
+        // Enriquecimiento (ya lo tienes)
         if (successMsg.includes('completada') || successMsg.includes('100%') || successMsg.includes('finalizada')) {
           successMsg = `🎉 ${successMsg}\n¡Excelente trabajo!`;
         }
