@@ -171,16 +171,16 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
       });
 
       let puntoActual: number;
-      let servicioId: number;
+      let servicioId: string;  // UUID como string
 
       if (existingRegistro) {
         // Caso ya existía → usamos datos del registro existente
         puntoActual = existingRegistro.puntoId;
-        servicioId = typeof existingRegistro.servicioId === 'string' ? parseInt(existingRegistro.servicioId, 10) : existingRegistro.servicioId;
+        servicioId = existingRegistro.servicioId;
       } else {
-        // Caso nuevo → usamos datos del request (ya validados)
+        // Caso nuevo → usamos datos del request y consultamos servicioId
         puntoActual = reg.punto;
-        // Necesitamos obtener servicioId → consulta mínima
+
         const puntoInfo = await prisma.punto.findUnique({
           where: { id: puntoActual },
           include: { servicios: true },
@@ -195,24 +195,15 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
           continue;
         }
 
-        servicioId = typeof puntoInfo.servicios[0].servicioId === 'string' ? parseInt(puntoInfo.servicios[0].servicioId, 10) : puntoInfo.servicios[0].servicioId;
+        servicioId = puntoInfo.servicios[0].servicioId;  // Asume uno, como en tu código original
       }
 
       // ── Reconstrucción común del mensaje rico ──
       const secuencia = await prisma.servicioPunto.findMany({
-        where: { servicioId: String(servicioId) },
+        where: { servicioId },
         orderBy: { punto: { id: 'asc' } },
         select: { puntoId: true },
       });
-
-      if (secuencia.length === 0) {
-        results.push({
-          uuid,
-          success: true, // aún consideramos éxito si ya existía
-          mensaje: `Punto ${puntoActual} procesado, pero servicio sin secuencia definida.`,
-        });
-        continue;
-      }
 
       const puntosOrdenados = secuencia.map(sp => sp.puntoId);
       const indiceActual = puntosOrdenados.indexOf(puntoActual);
@@ -221,15 +212,22 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
         ? `Punto ${puntoActual} ya fue registrado previamente.`
         : `Punto ${puntoActual} registrado correctamente.`;
 
-      if (indiceActual === puntosOrdenados.length - 1) {
+      if (indiceActual === -1) {
+        mensaje += ' (Nota: Este punto no está en la secuencia del servicio asignado. Contacta al administrador.)';
+      } else if (indiceActual === puntosOrdenados.length - 1) {
         mensaje = `¡Ronda completada al 100%! 🎉 Punto ${puntoActual} fue el último${
           existingRegistro ? ' (ya registrado)' : ''
-        }.\nPuedes iniciar una nueva ronda escaneando el punto ${puntosOrdenados[0] || 1}.`;
-      } else if (indiceActual !== -1) {
+        }.\nPuedes iniciar una nueva ronda escaneando el punto ${puntosOrdenados[0] || 'inicial'}.`;
+      } else {
         const siguienteId = puntosOrdenados[indiceActual + 1];
         if (siguienteId) {
           mensaje += ` Siguiente esperado: punto ${siguienteId}.`;
         }
+      }
+
+      // Fallback si secuencia vacía (pero con datos correctos, no debería pasar)
+      if (secuencia.length === 0) {
+        mensaje += '\n(Nota: La secuencia del servicio no está configurada. Contacta al administrador para verificar.)';
       }
 
       results.push({
