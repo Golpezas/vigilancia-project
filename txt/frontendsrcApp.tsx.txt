@@ -149,23 +149,26 @@ function App() {
   const handleScan = (p: number) => setPunto(p);
 
   const handleSuccess = (msg: string) => {
-    // Limpieza previa (elimina mensajes viejos)
-    setMensaje('');
-    setError(null);
+  // Limpieza estricta primero
+  setMensaje(null);
+  setError(null);
 
-    let displayMsg = msg || 'Registro enviado exitosamente al servidor';
+  let displayMsg = msg || 'Registro enviado exitosamente';
 
-    // Enriquecimiento visual según contenido backend
-    if (msg.includes('finalizada') || msg.includes('completada') || msg.includes('100%')) {
-      displayMsg = `🎉 ${msg}\n\n¡Felicitaciones! Ronda terminada. Escanea el punto 1 para comenzar una nueva.`;
-    } else if (msg.includes('Siguiente esperado')) {
-      displayMsg = `${msg}\n\nContinúa con el siguiente punto.`;
-    }
+  // Enriquecimiento
+  if (/finalizada|completada|100%|último/i.test(msg)) {
+    displayMsg = `🎉 ${msg}\n\n¡Felicitaciones! Ronda terminada.\nEscanea el punto 1 para comenzar una nueva ronda.`;
+  } else if (/siguiente|esperado/i.test(msg)) {
+    displayMsg = `${msg}\n\nContinúa escaneando el siguiente punto.`;
+  }
 
-    setMensaje(displayMsg);
-    setPunto(null);
-    loadPendingCount();
-  };
+  setMensaje(displayMsg);
+  setPunto(null);
+  loadPendingCount();
+
+  // Auto-ocultar después de 6 segundos (da tiempo a leer)
+  setTimeout(() => setMensaje(null), 6000);
+};
 
   const handleError = (err: string) => setError(err);
 
