@@ -4,9 +4,7 @@ import { ReporteService } from '../services/reporteService';
 import { requireAuth } from '../middlewares/authMiddleware';
 import { z } from 'zod';
 import logger from '../utils/logger';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../repositories/vigiladorRepository';
 
 const router = Router();
 

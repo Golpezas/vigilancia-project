@@ -16,8 +16,11 @@ if (!connectionString) {
   throw new Error('DATABASE_URL no configurado en .env'); // Validación early
 }
 
-const pool = new Pool({ connectionString });
-const adapter = new PrismaPg(pool);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,  // ← Change to connectionString
+});
+
+const adapter = new PrismaPg(pool);  // No extra options needed
 
 export const prisma = new PrismaClient({
   adapter, // ← Esto resuelve el error!
