@@ -86,18 +86,18 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   );
   
   // Cambiamos el tipo: ahora guarda el nombre completo (string) o null
-  const [selectedVigiladorNombre, setSelectedVigiladorNombre] = useState<string | null>(null);
+  const [selectedVigiladorId, setSelectedVigiladorId] = useState<string | null>(null);
 
   // Fetch con React Query - caching alto, no retry en errores comunes
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
-    queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigiladorNombre],
+    queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigiladorId], // Actualiza queryKey con el ID numérico
     queryFn: async () => {
       const params = {
         servicioId,
         fechaDesde: `${fechaDesde}T00:00:00-03:00`,
         fechaHasta: `${fechaHasta}T23:59:59-03:00`,
-        // Enviamos vigiladorId como el nombre completo (tal como lo espera el backend actual)
-        vigiladorId: selectedVigiladorNombre || undefined,
+        // Envía solo el legajo numérico como vigiladorId (asumiendo que el backend lo espera así)
+        vigiladorId: selectedVigiladorId || undefined,
       };
 
       console.log('[REPORTES QUERY] Enviando parámetros:', params); // ← para depurar
@@ -193,16 +193,20 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         <label className="flex-1">
           <span className="block text-sm font-medium text-gray-300 mb-2">Vigilador</span>
           <select
-            value={selectedVigiladorNombre || ''}
-            onChange={(e) => setSelectedVigiladorNombre(e.target.value || null)}
+            value={selectedVigiladorId || ''}
+            onChange={(e) => setSelectedVigiladorId(e.target.value || null)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           >
             <option value="">Todos</option>
-            {vigiladores.map(nombre => (
-              <option key={nombre} value={nombre}>
-                {nombre}
-              </option>
-            ))}
+            {vigiladores.map(nombre => {
+              // Extrae el legajo del nombre (asumiendo formato "[Nombre] - Legajo [Número]")
+              const legajo = nombre.split(' - Legajo ')?.[1] || ''; // Fallback a '' si no matchea
+              return (
+                <option key={nombre} value={legajo}>
+                  {nombre}
+                </option>
+              );
+            })}
           </select>
         </label>
       </div>
