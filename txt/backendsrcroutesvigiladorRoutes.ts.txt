@@ -66,7 +66,7 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
           throw new Error(`Punto ${reg.punto} no encontrado o sin servicio asignado`);
         }
 
-        const servicioId = punto.servicios[0].servicioId; // Asume uno (ajusta si multi-servicio)
+        const servicioId = String(punto.servicios[0].servicioId); // Asume uno (ajusta si multi-servicio)
 
         const secuenciaPuntos = await tx.servicioPunto.findMany({
           where: { servicioId },
@@ -157,42 +157,48 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
       mensaje: string;
     }> = [];
 
-    // Nota: como estamos dentro de la transacción exitosa,
-    // todos los registros que llegaron aquí fueron procesados o ya existían
     for (const reg of registros) {
       const uuid = reg.uuid;
 
-      // Si ya existía → lo consideramos "exitoso" pero con mensaje de duplicado
-      if (await prisma.registro.findUnique({ where: { uuid } })) {
-        results.push({
-          uuid,
-          success: true,
-          mensaje: `Registro ya existía (idempotente) - punto ${reg.punto}`,
-        });
-        continue;
-      }
-
-      // Para los que se procesaron ahora → reconstruimos mensaje rico
-      // (usamos la misma info que ya calculamos antes en el loop)
-
-      const puntoActual = reg.punto;
-
-      // Obtenemos los puntos ordenados (reutilizamos lógica similar)
-      const puntoData = await prisma.punto.findUnique({
-        where: { id: puntoActual },
-        include: { servicios: true },
+      // Buscar si ya existe (idempotencia)
+      const existingRegistro = await prisma.registro.findUnique({
+        where: { uuid },
+        include: {
+          punto: true,
+          servicio: true,
+          vigilador: true,
+        },
       });
 
-      if (!puntoData || puntoData.servicios.length === 0) {
-        results.push({
-          uuid,
-          success: false,
-          mensaje: 'Error al generar mensaje: punto o servicio no encontrado',
+      let puntoActual: number;
+      let servicioId: string;  // UUID como string
+
+      if (existingRegistro) {
+        // Caso ya existía → usamos datos del registro existente
+        puntoActual = existingRegistro.puntoId;
+        servicioId = existingRegistro.servicioId;
+      } else {
+        // Caso nuevo → usamos datos del request y consultamos servicioId
+        puntoActual = reg.punto;
+
+        const puntoInfo = await prisma.punto.findUnique({
+          where: { id: puntoActual },
+          include: { servicios: true },
         });
-        continue;
+
+        if (!puntoInfo || puntoInfo.servicios.length === 0) {
+          results.push({
+            uuid,
+            success: false,
+            mensaje: `Error: punto ${puntoActual} sin servicio asignado`,
+          });
+          continue;
+        }
+
+        servicioId = puntoInfo.servicios[0].servicioId;  // Asume uno, como en tu código original
       }
 
-      const servicioId = puntoData.servicios[0].servicioId;
+      // ── Reconstrucción común del mensaje rico ──
       const secuencia = await prisma.servicioPunto.findMany({
         where: { servicioId },
         orderBy: { punto: { id: 'asc' } },
@@ -202,18 +208,26 @@ router.post('/submit-batch', (async (req: Request, res: Response) => {
       const puntosOrdenados = secuencia.map(sp => sp.puntoId);
       const indiceActual = puntosOrdenados.indexOf(puntoActual);
 
-      let mensaje = `Punto ${puntoActual} registrado correctamente.`;
+      let mensaje = existingRegistro
+        ? `Punto ${puntoActual} ya fue registrado previamente.`
+        : `Punto ${puntoActual} registrado correctamente.`;
 
-      if (indiceActual === puntosOrdenados.length - 1) {
-        // Es el último punto de la ronda
-        mensaje = `¡Ronda completada al 100%! 🎉 Punto ${puntoActual} fue el último.`;
-        mensaje += `\nPuedes iniciar una nueva ronda escaneando el punto ${puntosOrdenados[0] || 1}.`;
+      if (indiceActual === -1) {
+        mensaje += ' (Nota: Este punto no está en la secuencia del servicio asignado. Contacta al administrador.)';
+      } else if (indiceActual === puntosOrdenados.length - 1) {
+        mensaje = `¡Ronda completada al 100%! 🎉 Punto ${puntoActual} fue el último${
+          existingRegistro ? ' (ya registrado)' : ''
+        }.\nPuedes iniciar una nueva ronda escaneando el punto ${puntosOrdenados[0] || 'inicial'}.`;
       } else {
-        // Hay siguiente punto
         const siguienteId = puntosOrdenados[indiceActual + 1];
         if (siguienteId) {
           mensaje += ` Siguiente esperado: punto ${siguienteId}.`;
         }
+      }
+
+      // Fallback si secuencia vacía (pero con datos correctos, no debería pasar)
+      if (secuencia.length === 0) {
+        mensaje += '\n(Nota: La secuencia del servicio no está configurada. Contacta al administrador para verificar.)';
       }
 
       results.push({

@@ -84,35 +84,49 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   const [fechaHasta, setFechaHasta] = useState<string>(
     formatInTimeZone(today, TIMEZONE, 'yyyy-MM-dd')
   );
-  const [selectedVigilador, setSelectedVigilador] = useState<string | null>(null);
+  
+  // Cambiamos el tipo: ahora guarda el nombre completo (string) o null
+  const [selectedVigiladorNombre, setSelectedVigiladorNombre] = useState<string | null>(null);
 
   // Fetch con React Query - caching alto, no retry en errores comunes
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
-    queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigilador],
+    queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigiladorNombre],
     queryFn: async () => {
-      const res = await api.get('/reportes/rondas', {
-        params: {
-          servicioId,
-          fechaDesde: `${fechaDesde}T00:00:00-03:00`,
-          fechaHasta: `${fechaHasta}T23:59:59-03:00`,
-          vigiladorId: selectedVigilador || undefined,
-        },
-      });
+      const params = {
+        servicioId,
+        fechaDesde: `${fechaDesde}T00:00:00-03:00`,
+        fechaHasta: `${fechaHasta}T23:59:59-03:00`,
+        // Enviamos vigiladorId como el nombre completo (tal como lo espera el backend actual)
+        vigiladorId: selectedVigiladorNombre || undefined,
+      };
+
+      console.log('[REPORTES QUERY] Enviando parámetros:', params); // ← para depurar
+
+      const res = await api.get('/reportes/rondas', { params });
+      
       const parsed = RondasSchema.safeParse(res.data);
       if (!parsed.success) {
+        console.error('[REPORTES PARSE ERROR]', parsed.error);
         throw new Error('Datos de reportes inválidos: ' + parsed.error.issues.map(i => i.message).join(', '));
       }
       return parsed.data;
     },
-    staleTime: 1000 * 60 * 5, // 5 minutos de cache (reduce refetch innecesario)
-    gcTime: 1000 * 60 * 10,   // Garbage collect después de 10 min
-    retry: false,             // No retry para evitar bucles en errores
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    retry: false,
   });
 
   // Cálculos derivados
-  const vigiladores = Object.keys(data ?? {});
-  const totalRondas = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.length, 0);
-  const totalDelays = Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.filter(r => r.alerta).length, 0);
+  const vigiladores = useMemo(() => Object.keys(data ?? {}), [data]);
+
+  const totalRondas = useMemo(() => 
+    Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.length, 0),
+  [data]);
+
+  const totalDelays = useMemo(() => 
+    Object.values(data ?? {}).reduce((acc, ronda) => 
+      acc + ronda.filter(r => r.alerta).length, 0),
+  [data]);
 
   // chartData con useMemo (dependencias estrictas)
   const chartData = useMemo(() => {
@@ -179,12 +193,16 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
         <label className="flex-1">
           <span className="block text-sm font-medium text-gray-300 mb-2">Vigilador</span>
           <select
-            value={selectedVigilador || ''}
-            onChange={(e) => setSelectedVigilador(e.target.value || null)}
+            value={selectedVigiladorNombre || ''}
+            onChange={(e) => setSelectedVigiladorNombre(e.target.value || null)}
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           >
             <option value="">Todos</option>
-            {vigiladores.map(v => <option key={v} value={v}>{v}</option>)}
+            {vigiladores.map(nombre => (
+              <option key={nombre} value={nombre}>
+                {nombre}
+              </option>
+            ))}
           </select>
         </label>
       </div>

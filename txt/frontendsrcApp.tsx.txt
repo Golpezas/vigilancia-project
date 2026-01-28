@@ -146,31 +146,56 @@ function App() {
     setMensaje(null);
   };
 
-  const handleScan = (p: number) => setPunto(p);
+  const handleScan = (p: number) => {
+    setMensaje(null);  // Limpia success
+    setError(null);    // Limpia error
+    setPunto(p);
+  };
 
   const handleSuccess = (msg: string) => {
-  // Limpieza estricta primero
-  setMensaje(null);
-  setError(null);
+    setError(null);    // Limpia error antes
+    setMensaje(null);  // Limpia temporalmente para evitar flicker
 
-  let displayMsg = msg || 'Registro enviado exitosamente';
+    let displayMsg = msg || 'Registro enviado exitosamente al servidor';
 
-  // Enriquecimiento
-  if (/finalizada|completada|100%|último/i.test(msg)) {
-    displayMsg = `🎉 ${msg}\n\n¡Felicitaciones! Ronda terminada.\nEscanea el punto 1 para comenzar una nueva ronda.`;
-  } else if (/siguiente|esperado/i.test(msg)) {
-    displayMsg = `${msg}\n\nContinúa escaneando el siguiente punto.`;
-  }
+    // Enriquecimiento (ya lo tienes, pero hazlo consistente)
+    if (/finalizada|completada|100%|último/i.test(msg)) {
+      displayMsg = `🎉 ${msg}\n\n¡Felicitaciones! Ronda terminada.\nEscanea el punto 1 para comenzar una nueva ronda.`;
+    } else if (/siguiente|esperado/i.test(msg)) {
+      displayMsg = `${msg}\n\nContinúa escaneando el siguiente punto.`;
+    }
 
-  setMensaje(displayMsg);
-  setPunto(null);
-  loadPendingCount();
+    setMensaje(displayMsg);
+    setPunto(null);    // Esconde form
+    loadPendingCount();
 
-  // Auto-ocultar después de 6 segundos (da tiempo a leer)
-  setTimeout(() => setMensaje(null), 6000);
-};
+    // Auto-ocultar después de 6s
+    setTimeout(() => {
+      setMensaje(null);
+    }, 6000);
+  };
 
-  const handleError = (err: string) => setError(err);
+  const handleError = (err: string) => {
+    setMensaje(null);  // Limpia success antes
+    setError(null);    // Limpia temporalmente
+
+    // Enriquecimiento para UX
+    let displayMsg = err;
+    if (displayMsg.includes('Inconsistencia en orden') || displayMsg.includes('Debes escanear el punto')) {
+      displayMsg = `¡Atención! ${displayMsg.replace('Inconsistencia en orden: ', '')}\n\nSigue el orden de la ronda para continuar.`;
+    } else if (displayMsg.includes('timeout') || displayMsg.includes('conexión')) {
+      displayMsg += '\n\nVerifica tu internet e intenta de nuevo.';
+    }
+
+    console.log('Mostrando error al usuario:', displayMsg);  // Logging para debug
+
+    setError(displayMsg);
+
+    // Auto-ocultar error después de 8s (da más tiempo para leer)
+    setTimeout(() => {
+      setError(null);
+    }, 8000);
+  };
 
   const handleBack = () => setPunto(null);
 
@@ -205,12 +230,14 @@ function App() {
 
         {mensaje && (
           <div className="mb-6 p-5 bg-gradient-to-r from-green-700 to-green-900 rounded-xl text-center shadow-lg whitespace-pre-line border border-green-500/30">
-            {mensaje}
+            <p className="font-semibold mb-1">Éxito</p>
+            <p className="text-sm">{mensaje}</p>
           </div>
         )}
         {error && (
           <div className="mb-6 p-5 bg-gradient-to-r from-red-700 to-red-900 rounded-xl text-center shadow-lg whitespace-pre-line border border-red-500/30">
-            {error}
+            <p className="font-semibold mb-1">Error</p>
+            <p className="text-sm">{error}</p>
           </div>
         )}
 

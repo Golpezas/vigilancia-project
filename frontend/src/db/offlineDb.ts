@@ -7,6 +7,7 @@ export interface RegistroOffline extends SubmitRegistroData {
   uuid: string;
   createdAt: string;
   synced: number; // 0 = pendiente, 1 = sincronizado
+  error?: string | null; // Nuevo: Para marcar errores en sync (e.g., 'Secuencia inválida')
 }
 
 class OfflineDb extends Dexie {
@@ -14,13 +15,13 @@ class OfflineDb extends Dexie {
 
   constructor() {
     super('VigilanciaDB');
-    this.version(2) // ← ¡Subimos la versión a 2 para agregar índices!
+    this.version(3) // ← Subimos versión para agregar 'error'
       .stores({
-        registros: 'uuid, synced, legajo, punto', // ← Agregamos índices para consultas frecuentes
+        registros: 'uuid, synced, legajo, punto, error', // ← Índices optimizados para queries frecuentes (sync pendientes, por error)
       })
-      .upgrade(() => {
-        // Migración automática: si ya existía versión 1, Dexie la maneja
-        console.log('DB migrada a v2 - índices agregados');
+      .upgrade((tx) => {
+        // Migración: Agregar error: null a existentes
+        return tx.table('registros').toCollection().modify({ error: null });
       });
   }
 }
