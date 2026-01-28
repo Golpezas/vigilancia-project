@@ -69,6 +69,12 @@ const RondasSchema = z.record(z.string(), z.array(RegistroSchema));
 
 type NormalizedRondas = z.infer<typeof RondasSchema>;
 
+interface Vigilador {
+  id: string;
+  nombre: string;
+  legajo: string | number;
+}
+
 interface DashboardProps {
   servicioId: string;
 }
@@ -88,20 +94,28 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   // Cambiamos el tipo: ahora guarda el nombre completo (string) o null
   const [selectedVigiladorId, setSelectedVigiladorId] = useState<string | null>(null);
 
-  // Fetch con React Query - caching alto, no retry en errores comunes
+  // Nueva query para lista de vigiladores (se fetch solo una vez por servicioId)
+  const { data: vigiladoresList = [], isLoading: isVigiladoresLoading } = useQuery<Vigilador[], Error>({
+    queryKey: ['vigiladores', servicioId],
+    queryFn: async () => {
+      const res = await api.get('/reportes/vigiladores', { params: { servicioId } });
+      return res.data; // Array de { id: UUID, nombre: string, legajo: number/string }
+    },
+    staleTime: 1000 * 60 * 10, // Cache 10 min
+    retry: false,
+  });
+
+  // Fetch de reportes (igual, pero queryKey con selectedVigiladorId como UUID)
   const { data, isLoading, error } = useQuery<NormalizedRondas, Error>({
-    queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigiladorId], // Actualiza queryKey con el ID numérico
+    queryKey: ['reportes', servicioId, fechaDesde, fechaHasta, selectedVigiladorId],
     queryFn: async () => {
       const params = {
         servicioId,
         fechaDesde: `${fechaDesde}T00:00:00-03:00`,
         fechaHasta: `${fechaHasta}T23:59:59-03:00`,
-        // Envía solo el legajo numérico como vigiladorId (asumiendo que el backend lo espera así)
-        vigiladorId: selectedVigiladorId || undefined,
+        vigiladorId: selectedVigiladorId || undefined, // Envía UUID
       };
-
-      console.log('[REPORTES QUERY] Enviando parámetros:', params); // ← para depurar
-
+      console.log('[REPORTES QUERY] Enviando parámetros:', params);
       const res = await api.get('/reportes/rondas', { params });
       
       const parsed = RondasSchema.safeParse(res.data);
@@ -116,8 +130,8 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
     retry: false,
   });
 
-  // Cálculos derivados
-  const vigiladores = useMemo(() => Object.keys(data ?? {}), [data]);
+  // Vigiladores para memo/calc ahora usa la lista dedicada (no extrae de data)
+  const vigiladores = useMemo(() => vigiladoresList.map(v => `${v.nombre} - Legajo ${v.legajo}`), [vigiladoresList]);
 
   const totalRondas = useMemo(() => 
     Object.values(data ?? {}).reduce((acc, ronda) => acc + ronda.length, 0),
@@ -150,6 +164,10 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
   // Render condicional (solo JSX, sin hooks)
   if (isLoading) {
     return <div className="text-center py-10 text-gray-400 animate-pulse">Cargando reportes...</div>;
+  }
+
+  if (isVigiladoresLoading) {
+    return <div className="text-center py-10 text-gray-400 animate-pulse">Cargando vigiladores...</div>;
   }
 
   if (error) {
@@ -198,15 +216,11 @@ const DashboardPage: React.FC<DashboardProps> = ({ servicioId }) => {
             className="w-full p-4 bg-gray-700 text-white rounded-lg border border-gray-600 focus:border-blue-500"
           >
             <option value="">Todos</option>
-            {vigiladores.map(nombre => {
-              // Extrae el legajo del nombre (asumiendo formato "[Nombre] - Legajo [Número]")
-              const legajo = nombre.split(' - Legajo ')?.[1] || ''; // Fallback a '' si no matchea
-              return (
-                <option key={nombre} value={legajo}>
-                  {nombre}
-                </option>
-              );
-            })}
+            {vigiladoresList.map(v => (
+              <option key={v.id} value={v.id}>  {/* Value=UUID */}
+                {`${v.nombre} - Legajo ${v.legajo}`}
+              </option>
+            ))}
           </select>
         </label>
       </div>
